@@ -6,6 +6,30 @@
 
 ---
 
+## 0. Status (2026-10-30)
+
+The code for every phase is written (you asked to build it all at once, ahead of the Gate).
+The engine side is tested on this machine; **nothing has run inside real Nuke yet.**
+
+| Phase | Code | Verified | Still needs you |
+|---|---|---|---|
+| G1/G2 Nuke version, capability test | `nuke/tests/g2_capability_test.py` | engine side only | Install Nuke NC, run G2, fill in `docs/nuke_env.md` |
+| G3 real-footage check | — | 4K `pail.mp4` keyed cleanly (6 + 12 frames) | Your own footage, especially hair and log clips |
+| G4 worker protocol | `docs/worker_api.md` | read from the code | — |
+| 1 Colour prep | `ck_engine/probe.py`, `colour.py`, `prepare.py` | Unit tests: curve maths, matrices, exact limited/full decode (zscale), plate reuse. Real footage: sRGB MP4 only | Grey-card check per camera (S-Log3, V-Log, Apple Log, HLG untested); task 1.5 clamp vs keep |
+| 2 Job runner | `ck_engine/run.py`, `hints.py`, `despill.py`, `jobio.py`, `run_job.bat`, `run_queue.bat` | GPU end-to-end: preview, versions, first-frame hint, despill, cancel, cleanup | Run a matte-sequence hint on real footage |
+| 3 Nuke tool | `nuke/menu.py`, `nuke/ck2nuke/*`, `install_nuke_hook.py` | Logic tested against a stand-in `nuke` module, including a real engine run | **Everything inside real Nuke** |
+| 4 Hardening | failure messages, `docs/troubleshooting.md`, `docs/upgrade_checklist.md` | cancel, missing-input and bad-hint cases in tests | Test matrix on your footage (`docs/test_matrix.md`) |
+
+Changes from this plan, decided while building:
+- **No OpenColorIO by default.** The camera curves are the makers' published formulas, and gamut
+  matrices are derived from published primaries, all unit-tested. OCIO stays available as the "Other"
+  space. This avoids changing the shared CorridorKey venv.
+- **Decoding uses zscale, not swscale.** swscale was about 0.4 % off at the range ends.
+- **Cutout output dropped** (the worker doesn't produce it). `fg_despill` is written instead.
+- **"Prepare plate only"** is a mode of its own, so MP4 sources (which NC can't read) get a plate in
+  Nuke to Roto on before keying.
+
 ## 1. Summary
 
 A Python tool inside Nuke NC that sends a shot to CorridorKey 2.0 running as a separate process. The tool then loads the resulting EXRs back as Read nodes with a ready-made comp.

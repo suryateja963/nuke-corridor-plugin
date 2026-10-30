@@ -1,0 +1,356 @@
+"""Run one keying job: python -m ck_engine.run <job.json>
+
+prepare plate -> hint -> CK2 worker (upstream CorridorKey 2.0) -> rename outputs
+-> despill -> status.json. Prints `PROGRESS <0-1> <message>` lines for Nuke's
+progress bar; everything is also written to log.txt next to job.json. Cancel by
+creating a file named CANCEL next to job.json (or Ctrl+C in the console).
+"""
+
+from __future__ import annotations
+
+import ctypes
+import glob
+import os
+import queue
+import re
+import shutil
+import subprocess
+import sys
+import threading
+import time
+import traceback
+from pathlib import Path
+
+from . import __version__
+from .config import EngineError, check_engine, clean_env, find_tool, load_settings
+from .jobio import JobError, Status, load_job, write_json_atomic
+
+CANCEL_GRACE_S = 30
+_WINDOW = re.compile(r"window (\d+)/(\d+)")
+
+# Progress bands for each stage (start, end).
+P_PREPARE = (0.0, 0.15)
+P_HINT = (0.15, 0.17)
+P_LOAD = (0.17, 0.20)
+P_STAGE1 = (0.20, 0.60)
+P_STAGE2 = (0.60, 0.95)
+
+
+class Cancelled(Exception):
+    pass
+
+
+class Log:
+    """Prints to the console (read by Nuke) and appends to log.txt."""
+
+    def __init__(self, path: Path):
+        self.f = open(path, "a", encoding="utf-8")
+
+    def __call__(self, msg: str) -> None:
+        print(msg, flush=True)
+        self.f.write(msg + "\n")
+        self.f.flush()
+
+    def close(self) -> None:
+        self.f.close()
+
+
+def _pid_alive(pid: int) -> bool:
+    if pid <= 0:
+        return False
+    handle = ctypes.windll.kernel32.OpenProcess(0x1000, False, pid)  # QUERY_LIMITED_INFORMATION
+    if not handle:
+        return False
+    code = ctypes.c_ulong()
+    ctypes.windll.kernel32.GetExitCodeProcess(handle, ctypes.byref(code))
+    ctypes.windll.kernel32.CloseHandle(handle)
+    return code.value == 259  # STILL_ACTIVE
+
+
+def kill_tree(pid: int) -> None:
+    subprocess.run(["taskkill", "/T", "/F", "/PID", str(pid)], capture_output=True,
+                   creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+
+
+def next_version(key_dir: Path) -> str:
+    nums = [int(m.group(1)) for p in key_dir.glob("v*") if (m := re.fullmatch(r"v(\d{3,})", p.name))]
+    return f"v{(max(nums) + 1 if nums else 1):03d}"
+
+
+class Runner:
+    def __init__(self, job_path: Path):
+        self.job_path = job_path.resolve()
+        self.job_dir = self.job_path.parent
+        self.cancel_file = self.job_dir / "CANCEL"
+        self.log = Log(self.job_dir / "log.txt")
+        self.status = Status(self.job_dir)
+
+    # -- helpers ------------------------------------------------------------
+    def progress(self, band, frac: float, msg: str) -> None:
+        p = band[0] + (band[1] - band[0]) * max(0.0, min(1.0, frac))
+        self.log(f"PROGRESS {p:.3f} {msg}")
+        self.status.update(progress=round(p, 3), message=msg)
+
+    def check_cancel(self) -> None:
+        if self.cancel_file.exists():
+            raise Cancelled()
+
+    # -- main ---------------------------------------------------------------
+    def run(self) -> int:
+        self.log(f"=== CorridorKey 2.0 Nuke engine {__version__} - {time.strftime('%Y-%m-%d %H:%M:%S')}")
+        self.log(f"job: {self.job_path}")
+        if self.cancel_file.exists():
+            self.cancel_file.unlink()
+        lock = None
+        work = None
+        out = None  # key version folder; removed unless the key finishes
+        try:
+            job = load_job(self.job_path)
+            shot = Path(job["shot_dir"]).resolve()
+            shot.mkdir(parents=True, exist_ok=True)
+            lock = self._lock(shot)
+            cfg = load_settings()
+            check_engine(cfg)
+            ffmpeg, ffprobe = find_tool(cfg["ffmpeg"]), find_tool(cfg["ffprobe"])
+            self.status.update(force=True, shot_dir=str(shot), stage=job["stage"])
+
+            from .prepare import prepare_plate
+            from .probe import probe
+            self.progress(P_PREPARE, 0.0, "probing source")
+            src = probe(job["source"]["path"], ffprobe)
+            for w in src.warnings:
+                self.log(f"WARNING {w}")
+            self.log(f"source: {src.kind} {src.width}x{src.height} {src.fps:.3f} fps, "
+                     f"{len(src.frames)} frames, {src.pix_fmt} {src.bit_depth}-bit, "
+                     f"range={src.color_range or '?'} matrix={src.color_matrix or '?'} "
+                     f"transfer={src.color_transfer or '?'}")
+            plate = prepare_plate(src, job, shot, ffmpeg,
+                                  progress=lambda f, m: self.progress(P_PREPARE, f, m),
+                                  check_cancel=self.check_cancel)
+            plate_info = {"pattern": plate.pattern_hashes, "first": plate.frames[0],
+                          "last": plate.frames[-1], "count": len(plate.frames),
+                          "width": plate.width, "height": plate.height, "fps": plate.fps,
+                          "reused": plate.reused}
+            self.status.update(force=True, plate=plate_info, warnings=plate.warnings)
+            self.log(f"plate: {plate.pattern_hashes} {plate.frames[0]}-{plate.frames[-1]}"
+                     f"{' (reused)' if plate.reused else ''}")
+            if job["stage"] == "prepare":
+                self.status.finish("done", message="plate ready")
+                self.log("DONE plate ready")
+                return 0
+
+            preview = int(job["frames"].get("preview_frames") or 0) > 0
+            key_dir = shot / "key"
+            version = "preview" if preview else next_version(key_dir)
+            out = key_dir / version
+            if out.exists():
+                shutil.rmtree(out)
+            out.mkdir(parents=True)
+            work = shot / "work" / f"job_{int(time.time())}"
+            work.mkdir(parents=True)
+
+            from .hints import prepare_hint
+            self.progress(P_HINT, 0.0, "preparing hint")
+            hint = prepare_hint(job, plate, shot, ffmpeg, ffprobe, check_cancel=self.check_cancel)
+            self.check_cancel()
+
+            input_dir = self._link_plate(plate, work / "input")
+            raw_dir = out / "_raw"
+            wjob = {
+                "upstream_root": cfg["upstream_root"],
+                "work_dir": str(work), "output_dir": str(raw_dir),
+                "input_path": str(input_dir), "expected_frames": len(plate.frames),
+                "frame_size": [plate.width, plate.height],
+                "keep_exr": True, "return_arrays": False,
+                "settings": {
+                    "window": job["engine"]["window"], "low_vram": bool(job["engine"]["low_vram"]),
+                    "carry_hint": bool(job["hint"]["carry"]),
+                    "hint_quality": float(job["hint"]["quality"]),
+                    "max_frames": -1, "fps": plate.fps, "input_is_linear": True,
+                },
+                **hint,
+            }
+            wjob_path = work / "job.json"
+            write_json_atomic(wjob_path, wjob)
+            self._run_worker(cfg, wjob_path, work, len(plate.frames))
+
+            outputs = self._collect(raw_dir, out, plate.frames)
+            d = job["despill"]
+            if float(d["amount"]) > 0:
+                outputs["fg_despill"] = self._despill(out, plate.frames, float(d["amount"]), d["screen"])
+            shutil.rmtree(raw_dir, ignore_errors=True)
+            shutil.rmtree(work, ignore_errors=True)
+            work = None
+            self.status.finish("done", message=f"key {version} done", version=version,
+                               key_dir=str(out), outputs=outputs)
+            self.log(f"DONE {version} -> {out}")
+            out = None
+            return 0
+        except Cancelled:
+            self.status.finish("cancelled", message="cancelled", error="Cancelled by user")
+            self.log("CANCELLED")
+            return 2
+        except KeyboardInterrupt:
+            self.status.finish("cancelled", message="cancelled", error="Cancelled (Ctrl+C)")
+            self.log("CANCELLED (Ctrl+C)")
+            return 2
+        except (EngineError, JobError) as exc:
+            self.status.finish("failed", message="failed", error=str(exc))
+            self.log(f"ERROR {exc}")
+            return 1
+        except Exception as exc:  # noqa: BLE001
+            self.log(traceback.format_exc())
+            msg = f"{type(exc).__name__}: {exc}"
+            if isinstance(exc, OSError) and getattr(exc, "errno", None) == 28:
+                msg = "Disk full. Free space on the shot drive and try again."
+            self.status.finish("failed", message="failed", error=msg)
+            self.log(f"ERROR {msg}")
+            return 1
+        finally:
+            if work is not None:
+                shutil.rmtree(work, ignore_errors=True)
+            if out is not None:  # cancelled or failed: don't leave a half-written version
+                shutil.rmtree(out, ignore_errors=True)
+            if lock is not None:
+                lock.unlink(missing_ok=True)
+            if self.cancel_file.exists():
+                self.cancel_file.unlink(missing_ok=True)
+            self.log.close()
+
+    # -- steps ---------------------------------------------------------------
+    def _lock(self, shot: Path) -> Path:
+        lock = shot / ".running"
+        if lock.exists():
+            try:
+                pid = int(lock.read_text().strip() or 0)
+            except ValueError:
+                pid = 0
+            if _pid_alive(pid) and pid != os.getpid():
+                raise EngineError(f"this shot is already being keyed (process {pid}). Cancel it "
+                                  "or wait for it to finish.")
+        lock.write_text(str(os.getpid()))
+        return lock
+
+    def _link_plate(self, plate, dest: Path) -> Path:
+        """The worker keys every frame in its input folder, so give it exactly the
+        selected plate frames (hard links: instant, no extra disk on the same drive)."""
+        dest.mkdir(parents=True)
+        for i, f in enumerate(plate.frames):
+            src = plate.pattern % f
+            dst = dest / f"frame_{i:06d}.exr"
+            try:
+                os.link(src, dst)
+            except OSError:
+                shutil.copy2(src, dst)
+        return dest
+
+    def _run_worker(self, cfg: dict, wjob_path: Path, work: Path, total: int) -> None:
+        self.progress(P_LOAD, 0.0, "loading CorridorKey model")
+        proc = subprocess.Popen(
+            [cfg["engine_python"], "-u", cfg["worker_script"], str(wjob_path)],
+            cwd=cfg["upstream_root"], env=clean_env(),
+            stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+            text=True, encoding="utf-8", errors="replace",
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        q: queue.Queue = queue.Queue()
+
+        def pump():
+            for line in proc.stdout:
+                q.put(line.rstrip())
+            q.put(None)
+
+        threading.Thread(target=pump, daemon=True).start()
+        tail: list[str] = []
+        done = False
+        cancel_at = None
+        try:
+            while True:
+                try:
+                    line = q.get(timeout=0.25)
+                except queue.Empty:
+                    if cancel_at is None and self.cancel_file.exists():
+                        (work / "CANCEL").touch()
+                        cancel_at = time.time()
+                        self.log("cancelling (waiting for the engine to stop)...")
+                    elif cancel_at is not None and time.time() - cancel_at > CANCEL_GRACE_S:
+                        kill_tree(proc.pid)
+                    continue
+                if line is None:
+                    break
+                tail.append(line)
+                del tail[:-60]
+                if line.startswith("CK2_PROGRESS"):
+                    _, n, _t = line.split()
+                    self.progress(P_STAGE2, int(n) / max(total, 1), f"writing frames {n}/{total}")
+                    continue
+                if line.startswith("CK2_DONE"):
+                    done = True
+                self.log(f"  | {line}")
+                m = _WINDOW.search(line)
+                if m:
+                    i, n = int(m.group(1)), int(m.group(2))
+                    self.progress(P_STAGE1, i / max(n, 1), f"keying window {i}/{n}")
+                elif "Auto VRAM" in line:
+                    self.status.update(force=True, auto_vram=line.strip())
+        except KeyboardInterrupt:
+            (work / "CANCEL").touch()
+            kill_tree(proc.pid)
+            raise
+        proc.wait()
+        if cancel_at is not None:
+            raise Cancelled()
+        if proc.returncode != 0 or not done:
+            text = "\n".join(tail)
+            if "OutOfMemoryError" in text or "CUDA out of memory" in text:
+                raise EngineError("The GPU ran out of memory. Close other GPU apps (browser, "
+                                  "Resolve, games; set Nuke's viewer to a small frame), or tick "
+                                  "Low VRAM / pick a smaller window, then key again.")
+            last = next((l for l in reversed(tail) if l.strip()), "no output")
+            raise EngineError(f"CorridorKey engine failed (code {proc.returncode}): {last[-300:]}. "
+                              "Full output in log.txt.")
+
+    def _collect(self, raw_dir: Path, out: Path, frames: list[int]) -> dict:
+        """<clip>_alpha_exr/alpha_000000.exr -> alpha/alpha.1001.exr (plate numbers)."""
+        outputs = {}
+        for name in ("alpha", "fg"):
+            dirs = glob.glob(str(raw_dir / "exr" / f"*_{name}_exr"))
+            if not dirs:
+                raise EngineError(f"engine wrote no {name} EXRs")
+            files = sorted(glob.glob(os.path.join(dirs[0], f"{name}_*.exr")))
+            if len(files) != len(frames):
+                raise EngineError(f"engine wrote {len(files)} {name} frames, expected {len(frames)}")
+            dest = out / name
+            dest.mkdir()
+            for f, frame in zip(files, frames):
+                os.replace(f, dest / f"{name}.{frame:04d}.exr")
+            outputs[name] = str(dest / f"{name}.####.exr")
+        return outputs
+
+    def _despill(self, out: Path, frames: list[int], amount: float, screen: str) -> str:
+        from .despill import despill
+        from .imageio import read_image, write_exr
+        dest = out / "fg_despill"
+        dest.mkdir()
+        for i, frame in enumerate(frames):
+            self.check_cancel()
+            fg = read_image(str(out / "fg" / f"fg.{frame:04d}.exr"))
+            write_exr(str(dest / f"fg_despill.{frame:04d}.exr"), despill(fg, amount, screen))
+            if i % 8 == 0:
+                self.progress((0.95, 1.0), (i + 1) / len(frames), f"despill {i + 1}/{len(frames)}")
+        return str(dest / "fg_despill.####.exr")
+
+
+def main(argv=None) -> int:
+    argv = sys.argv[1:] if argv is None else argv
+    if len(argv) != 1:
+        print("usage: python -m ck_engine.run <job.json>")
+        return 64
+    path = Path(argv[0])
+    if not path.is_file():
+        print(f"ERROR job file not found: {path}")
+        return 64
+    return Runner(path).run()
+
+
+if __name__ == "__main__":
+    sys.exit(main())

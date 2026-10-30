@@ -12,3 +12,9 @@ settings.local.json
 
 # Gate test output
 _g2_out/
+
+# Nuke installer (large, licensed; never commit)
+nuke software/
+
+# test output
+_e2e_out/

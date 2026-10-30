@@ -1,0 +1,9 @@
+{
+  "engine_python": "D:/CorridorKey2/venv/Scripts/python.exe",
+  "upstream_root": "D:/CorridorKey2/upstream",
+  "worker_script": "D:/CorridorKey2/ComfyUI-CorridorKey2/ck2/worker.py",
+  "ffmpeg": "ffmpeg",
+  "ffprobe": "ffprobe",
+  "shot_root": "D:/CKShots",
+  "nuke_blocking_run": false
+}
