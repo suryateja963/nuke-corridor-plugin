@@ -154,13 +154,23 @@ class Runner:
             hint = prepare_hint(job, plate, shot, ffmpeg, ffprobe, check_cancel=self.check_cancel)
             self.check_cancel()
 
-            input_dir = self._link_plate(plate, work / "input")
+            from . import crop as cropmod
+            crop, how = cropmod.resolve(job, plate, hint)
+            self.log(f"crop: {how}")
+            self.status.update(force=True, crop=list(crop) if crop else None)
+            if crop:
+                input_dir = cropmod.write_input(plate, crop, work / "input", self.check_cancel)
+                hint = cropmod.crop_hint(hint, crop, plate, work)
+                size = [crop[2], crop[3]]
+            else:
+                input_dir = self._link_plate(plate, work / "input")
+                size = [plate.width, plate.height]
             raw_dir = out / "_raw"
             wjob = {
                 "upstream_root": cfg["upstream_root"],
                 "work_dir": str(work), "output_dir": str(raw_dir),
                 "input_path": str(input_dir), "expected_frames": len(plate.frames),
-                "frame_size": [plate.width, plate.height],
+                "frame_size": size,
                 "keep_exr": True, "return_arrays": False,
                 "settings": {
                     "window": job["engine"]["window"], "low_vram": bool(job["engine"]["low_vram"]),
@@ -175,6 +185,8 @@ class Runner:
             self._run_worker(cfg, wjob_path, work, len(plate.frames))
 
             outputs = self._collect(raw_dir, out, plate.frames)
+            if crop:
+                self._paste(out, plate, crop)
             d = job["despill"]
             if float(d["amount"]) > 0:
                 outputs["fg_despill"] = self._despill(out, plate.frames, float(d["amount"]), d["screen"])
@@ -325,6 +337,24 @@ class Runner:
                 os.replace(f, dest / f"{name}.{frame:04d}.exr")
             outputs[name] = str(dest / f"{name}.####.exr")
         return outputs
+
+    def _paste(self, out: Path, plate, crop) -> None:
+        """Cropped alpha/fg -> full plate size, zero outside the box."""
+        from .crop import paste_file
+        edge = 0.0
+        for i, frame in enumerate(plate.frames):
+            self.check_cancel()
+            edge = max(edge, paste_file(out / "alpha" / f"alpha.{frame:04d}.exr", crop,
+                                        plate.width, plate.height))
+            paste_file(out / "fg" / f"fg.{frame:04d}.exr", crop, plate.width, plate.height)
+            if i % 8 == 0:
+                self.progress((0.95, 0.97), (i + 1) / len(plate.frames),
+                              f"placing crop {i + 1}/{len(plate.frames)}")
+        if edge > 0.02:
+            msg = (f"the subject touches the crop box edge ({edge:.0%} of the border); part of it "
+                   "may be cut off. Raise the crop margin or set crop to off.")
+            self.log(f"WARNING {msg}")
+            self.status.update(force=True, warnings=self.status.data.get("warnings", []) + [msg])
 
     def _despill(self, out: Path, frames: list[int], amount: float, screen: str) -> str:
         from .despill import despill

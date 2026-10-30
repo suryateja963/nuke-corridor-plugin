@@ -40,6 +40,11 @@ DEFAULT_JOB = {
         "carry": True,
     },
     "despill": {"amount": 0.0, "screen": "green"},
+    "crop": {
+        "mode": "off",             # off | auto (find the subject against the screen) | manual
+        "margin": 64,              # pixels added around the auto box before rounding to 128
+        "box": None,               # manual: [x, y, w, h] in plate pixels
+    },
     "engine": {"window": "auto", "low_vram": False},
 }
 
@@ -100,6 +105,13 @@ def validate(job: dict) -> None:
     d = job["despill"]
     if not 0.0 <= float(d["amount"]) <= 1.0 or d["screen"] not in ("green", "blue"):
         raise JobError("despill.amount must be 0-1 and despill.screen green or blue")
+    c = _merge(DEFAULT_JOB["crop"], job.get("crop") or {})
+    if c["mode"] not in ("off", "auto", "manual"):
+        raise JobError("crop.mode must be off, auto or manual")
+    if c["mode"] == "manual" and not (isinstance(c.get("box"), (list, tuple)) and len(c["box"]) == 4):
+        raise JobError("crop.mode manual needs crop.box = [x, y, w, h]")
+    if not 0 <= int(c["margin"]) <= 1024:
+        raise JobError("crop.margin must be 0-1024 pixels")
     w = job["engine"]["window"]
     if w != "auto" and not (isinstance(w, int) and 1 <= w <= 80):
         raise JobError("engine.window must be 'auto' or a number of frames (1-80)")

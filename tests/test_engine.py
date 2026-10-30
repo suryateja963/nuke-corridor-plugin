@@ -16,7 +16,7 @@ import numpy as np
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO))
 
-from ck_engine import colour, despill, hints, jobio, prepare, probe  # noqa: E402
+from ck_engine import colour, crop, despill, hints, jobio, prepare, probe  # noqa: E402
 from ck_engine.config import EngineError, find_tool, load_settings  # noqa: E402
 from ck_engine.imageio import read_image, write_exr, write_png16  # noqa: E402
 from ck_engine.run import next_version  # noqa: E402
@@ -250,6 +250,83 @@ class HintTests(unittest.TestCase):
         img = read_image(os.path.join(out["hint_path"], files[0]))
         self.assertEqual(img.shape[:2], (8, 16))
         self.assertAlmostEqual(float(img.min()), 1.0, places=3)
+
+
+class _CropPlate:
+    def __init__(self, d, frames, w, h):
+        self.pattern, self.frames, self.width, self.height = str(Path(d) / "p.%04d.exr"), frames, w, h
+
+
+def _green_plate(d, w=1024, h=512, box=(400, 150, 520, 400), n=5):
+    """Linear green screen with a grey subject at box (x0, y0, x1, y1)."""
+    plate = _CropPlate(d, list(range(1001, 1001 + n)), w, h)
+    for f in plate.frames:
+        img = np.empty((h, w, 3), np.float32)
+        img[:] = (0.05, 0.45, 0.06)
+        img[box[1]:box[3], box[0]:box[2]] = (0.3, 0.25, 0.2)
+        write_exr(plate.pattern % f, img)
+    return plate
+
+
+class CropTests(unittest.TestCase):
+    def job(self, **c):
+        return {"crop": {"mode": "auto", "margin": 64, "box": None, **c}}
+
+    def test_finalize_rounds_to_128_and_stays_inside(self):
+        self.assertEqual(crop.finalize((400, 150, 520, 400), 1024, 512, 64), (332, 83, 256, 384))
+        x, y, w, h = crop.finalize((0, 0, 30, 30), 1920, 1080, 64)
+        self.assertEqual((x, y, w % 128, h % 128), (0, 0, 0, 0))
+
+    def test_auto_finds_subject_on_green(self):
+        with tempfile.TemporaryDirectory() as d:
+            plate = _green_plate(d)
+            box, how = crop.resolve(self.job(), plate, {})
+            self.assertIn("green screen", how)
+            x, y, w, h = box
+            self.assertTrue(x <= 400 and x + w >= 520 and y <= 150 and y + h >= 400, box)
+            self.assertLess(w, 1024)
+
+    def test_auto_falls_back_without_screen(self):
+        with tempfile.TemporaryDirectory() as d:
+            plate = _CropPlate(d, [1001], 512, 256)
+            write_exr(plate.pattern % 1001, np.full((256, 512, 3), 0.3, np.float32))
+            box, how = crop.resolve(self.job(), plate, {})
+            self.assertIsNone(box)
+            self.assertIn("full frame", how)
+
+    def test_off_and_manual(self):
+        plate = _CropPlate("x", [1], 1920, 1080)
+        self.assertEqual(crop.resolve(self.job(mode="off"), plate, {})[0], None)
+        box, _ = crop.resolve(self.job(mode="manual", box=[1800, 1000, 512, 512]), plate, {})
+        self.assertEqual(box, (1800, 1000, 120, 80))
+
+    def test_hint_and_paste_back(self):
+        with tempfile.TemporaryDirectory() as d:
+            d = Path(d)
+            plate = _green_plate(d)
+            mask = np.zeros((256, 512), np.float32)     # half-size first-frame hint
+            mask[75:200, 200:260] = 1.0
+            np.save(str(d / "h.npy"), mask[None])
+            box, how = crop.resolve(self.job(), plate, {"hint_npy": str(d / "h.npy")})
+            self.assertIn("hint", how)
+            cut = crop.crop_hint({"hint_npy": str(d / "h.npy"), "hint_mode": "first_frame"}, box, plate, d)
+            hm = np.load(cut["hint_npy"])
+            self.assertEqual(hm.shape, (1, box[3], box[2]))
+            x, y, w, h = box
+            alpha = np.zeros((h, w, 3), np.float32)
+            alpha[10:20, 10:20] = 1.0
+            write_exr(str(d / "a.exr"), alpha)
+            edge = crop.paste_file(d / "a.exr", box, 1024, 512)
+            full = read_image(str(d / "a.exr"))
+            self.assertEqual(full.shape[:2], (512, 1024))
+            self.assertEqual(float(full[y + 15, x + 15, 0]), 1.0)
+            self.assertEqual(float(full.sum()), 300.0)
+            self.assertEqual(edge, 0.0)
+
+    def test_job_validation(self):
+        jobio.validate({**jobio.DEFAULT_JOB, "source": {"path": "a"}, "crop": {"mode": "auto"}})
+        with self.assertRaises(jobio.JobError):
+            jobio.validate({**jobio.DEFAULT_JOB, "source": {"path": "a"}, "crop": {"mode": "manual"}})
 
 
 class MiscTests(unittest.TestCase):

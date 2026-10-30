@@ -118,6 +118,10 @@ class KeyPanel(nukescripts.PythonPanel):
         k["despill"].setRange(0.0, 1.0)
         k["despill"].setValue(0.5)
         add(nuke.Enumeration_Knob("screen", "screen", ["green", "blue"]), newline=False)
+        add(nuke.Enumeration_Knob("crop", "crop to subject", ["auto", "off"]))
+        add(nuke.Int_Knob("crop_margin", "margin"), newline=False)
+        k["crop_margin"].setValue(64)
+        add(nuke.Text_Knob("crop_note", "", "auto: key only the box around the subject (sharper hair/fur)"))
         add(nuke.Enumeration_Knob("window", "window", WINDOWS))
         add(nuke.Boolean_Knob("low_vram", "low VRAM"), newline=False)
         add(nuke.Boolean_Knob("prepare_only", "prepare plate only (then draw a Roto on it)"))
@@ -273,6 +277,7 @@ def key_shot(prepare_only=False):
                      "invert": bool(k["hint_invert"].value()),
                      "quality": float(k["hint_quality"].value()), "carry": True},
             "despill": {"amount": float(k["despill"].value()), "screen": k["screen"].value()},
+            "crop": {"mode": k["crop"].value(), "margin": int(k["crop_margin"].value())},
             "engine": {"window": "auto" if k["window"].value() == "auto" else int(k["window"].value()),
                        "low_vram": bool(k["low_vram"].value())},
         }

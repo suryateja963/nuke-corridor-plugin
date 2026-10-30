@@ -57,3 +57,35 @@ Metrics are computed on soft-edge pixels only (0.05 < alpha < 0.95) of the middl
 5. **Better flicker metric:** compare alpha only where the plate itself didn't change (|Δplate| small).
 
 Re-run `tests\hair_fur_batch.py` after each change and compare it with this table.
+
+## Run 2: auto-crop (2026-10-30)
+
+`tests\hair_fur_batch.py --crop auto --out hairfur_crop`, same 10 clips and settings, compared with
+`tests\compare_hairfur.py hairfur hairfur_crop` (same edge close-up from both runs).
+
+| clip | crop box (x, y, w, h) | soft edge % | flicker | spill | time | est. VRAM peak |
+|---|---|---|---|---|---|---|
+| girlhair | full frame (no clear screen at border) | 1.88 → 1.88 | .020 → .020 | .001 → .001 | 70 → 86 s | 5.9 GB |
+| greenoutfit | full frame (subject fills it) | 0.64 → 0.64 | .057 → .057 | .035 → .035 | 77 → 78 s | 4.2 GB |
+| manhair | 462,56,1152,1024 | 1.89 → 1.89 | .101 → .101 | .000 → .000 | 69 → 60 s | 5.9 → 4.2 GB |
+| womanblue | 324,0,1024,1080 | 0.97 → 0.98 | .086 → .086 | .001 → .001 | 72 → 60 s | 5.9 → 4.2 GB |
+| womangreen | 512,0,1408,1080 | 1.02 → 1.01 | .016 → .016 | .008 → .009 | 70 → 76 s | 5.9 → 4.9 GB |
+| cat | 492,184,896,896 | 2.46 → 2.50 | .022 → .022 | .001 → .001 | 70 → 51 s | 5.9 → 3.9 GB |
+| fluffykitten | 450,100,1024,896 | 2.31 → 2.36 | .014 → .013 | .020 → .019 | 74 → 56 s | 5.9 → 3.9 GB |
+| gingerkitten | 0,56,1280,1024 | 5.51 → 5.51 | .064 → .063 | .007 → .007 | 65 → 64 s | 5.9 → 4.4 GB |
+| lyingkitten | full frame (subject fills it) | 4.02 → 4.02 | .065 → .065 | .030 → .030 | 72 → 74 s | 5.9 GB |
+| rabbit | 258,184,1280,896 | 0.96 → 0.99 | .062 → .061 | .035 → .034 | 73 → 67 s | 5.9 → 4.2 GB |
+
+**Result:** no visible quality change at 1080p. The close-ups are the same, and the metrics move by
+at most 0.05 points. Upstream keys at the input's own resolution (its internal downscales are fixed
+fractions of the input size), so a crop doesn't show it more pixels of fur, and the "sharper tips"
+expectation was wrong. What crop does give is speed (up to 27% faster on the cat) and a lower VRAM
+peak (5.9 → 3.9–4.9 GB). That headroom matters most at 4K, where full frames are limited to window 4.
+The 4K check is still to do. Every crop kept the whole subject: no clip raised the crop-edge warning.
+
+**Decision:** keep it as the panel default ("crop to subject: auto"). It falls back to the full frame
+by itself when there's no clear screen or the subject fills the frame. The job schema default stays
+"off", so older job files behave as before.
+
+**Next for hair/fur quality:** edge-aware despill (candidate 2) is now the top item. Fur-tip softness
+needs a model-side or refinement change (candidate 3), not a crop.

@@ -1,9 +1,10 @@
 r"""Hair and fur quality batch: key real clips, build review sheets and edge metrics.
 
     D:\CorridorKey2\venv\Scripts\python.exe tests\hair_fur_batch.py [--frames 16] [--first 31] [--only cat,manhair]
+        [--crop auto] [--out hairfur_crop]
 
 For every clip in D:\CorridorKey2\test_clips\{hair,animals}\raw it runs the
-engine (same as the Nuke panel), then writes to _e2e_out\hairfur\:
+engine (same as the Nuke panel), then writes to _e2e_out\<--out>\ (default hairfur):
   <clip>_sheet.png   plate | alpha | comp on dark | comp on bright, plus a 2x close-up
                      of the busiest soft edge (alpha, comp)
   overview.png       one row per clip
@@ -50,11 +51,11 @@ def label(img, text):
     return img
 
 
-def key_clip(clip: Path, first: int, frames: int):
+def key_clip(clip: Path, first: int, frames: int, crop: str):
     shot = OUT / "shots" / clip.stem
     shot.mkdir(parents=True, exist_ok=True)
     job = {"schema_version": 1, "source": {"path": str(clip)}, "colour": {"space": "srgb_rec709"},
-           "frames": {"first": first, "last": first + frames - 1}, "despill": {"amount": 0.5}}
+           "frames": {"first": first, "last": first + frames - 1}, "despill": {"amount": 0.5}, "crop": {"mode": crop}}
     (shot / "job.json").write_text(json.dumps(job, indent=2))
     t = time.time()
     r = subprocess.run([sys.executable, "-m", "ck_engine.run", str(shot / "job.json")], cwd=REPO,
@@ -97,6 +98,7 @@ def review(clip, status):
         "seconds": status["seconds"],
         "frames": len(frames),
         "auto_vram": (status.get("auto_vram") or "").replace("Auto VRAM: ", ""),
+        "crop": status.get("crop"),
     }
 
     a3 = a[..., None]
@@ -131,7 +133,11 @@ def main():
     ap.add_argument("--frames", type=int, default=16)
     ap.add_argument("--first", type=int, default=31)
     ap.add_argument("--only", default="")
+    ap.add_argument("--crop", default="off", choices=["off", "auto"])
+    ap.add_argument("--out", default="hairfur")
     args = ap.parse_args()
+    global OUT
+    OUT = REPO / "_e2e_out" / args.out
     OUT.mkdir(parents=True, exist_ok=True)
     clips = sorted((CLIPS / "hair" / "raw").glob("*.mp4")) + sorted((CLIPS / "animals" / "raw").glob("*.mp4"))
     if args.only:
@@ -140,7 +146,7 @@ def main():
     results, rows = {}, []
     for clip in clips:
         print(f"keying {clip.stem} ...", flush=True)
-        st = key_clip(clip, args.first, args.frames)
+        st = key_clip(clip, args.first, args.frames, args.crop)
         if st.get("state") != "done":
             results[clip.stem] = {"error": st.get("error")}
             print(f"  FAILED: {st.get('error')}", flush=True)
@@ -155,12 +161,12 @@ def main():
         width = max(r.shape[1] for r in rows)
         rows = [cv2.copyMakeBorder(r, 0, 0, 0, width - r.shape[1], cv2.BORDER_CONSTANT) for r in rows]
         cv2.imwrite(str(OUT / "overview.png"), np.vstack(rows))
-    lines = ["| clip | soft edge % | flicker | spill | s | window |", "|---|---|---|---|---|---|"]
+    lines = ["| clip | soft edge % | flicker | spill | s | crop | window |", "|---|---|---|---|---|---|---|"]
     for k, m in results.items():
         if "error" in m:
-            lines.append(f"| {k} | failed | | | | {m['error']} |")
+            lines.append(f"| {k} | failed | | | | | {m['error']} |")
         else:
-            lines.append(f"| {k} | {m['soft_edge_pct']} | {m['flicker']} | {m['spill']} | {m['seconds']} | {m['auto_vram']} |")
+            lines.append(f"| {k} | {m['soft_edge_pct']} | {m['flicker']} | {m['spill']} | {m['seconds']} | {m.get('crop')} | {m['auto_vram']} |")
     (OUT / "metrics.md").write_text("\n".join(lines) + "\n")
     print("\n".join(lines))
 
