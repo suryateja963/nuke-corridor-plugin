@@ -124,7 +124,7 @@ class KeyPanel(nukescripts.PythonPanel):
         add(nuke.Enumeration_Knob("crop", "crop to subject", ["auto", "off"]))
         add(nuke.Int_Knob("crop_margin", "margin"), newline=False)
         k["crop_margin"].setValue(64)
-        add(nuke.Text_Knob("crop_note", "", "auto: key only the box around the subject (sharper hair/fur)"))
+        add(nuke.Text_Knob("crop_note", "", "auto: key only the box around the subject (faster, less GPU memory)"))
         add(nuke.Enumeration_Knob("refine", "refine matte", [r[0] for r in REFINE]))
         add(nuke.Int_Knob("refine_grow", "grow/shrink px"), newline=False)
         add(nuke.Text_Knob("refine_note", "", "hair/fur: steadier edges, specks removed - solid: firmer edges, holes filled"))

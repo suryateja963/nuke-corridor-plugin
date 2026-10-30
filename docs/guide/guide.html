@@ -1,0 +1,465 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>CorridorKey 2.0 for Nuke - Setup and User Guide</title>
+<style>
+  @page { size: A4; margin: 16mm 15mm 18mm 15mm; }
+  :root { --ink: #1d232b; --muted: #5b6673; --line: #d9dee4; --accent: #1f7a4d; --accent-soft: #e8f4ee;
+          --warn: #9a5b00; --warn-soft: #fff4e0; --code: #f3f5f7; }
+  * { box-sizing: border-box; }
+  body { font-family: "Segoe UI", Arial, sans-serif; color: var(--ink); font-size: 10.5pt; line-height: 1.5; margin: 0; background: #fff; }
+  h1 { font-size: 21pt; margin: 0 0 4mm; }
+  h2 { font-size: 15pt; margin: 0 0 3mm; padding-bottom: 1.5mm; border-bottom: 2px solid var(--accent); break-after: avoid; }
+  h3 { font-size: 11.5pt; margin: 5mm 0 2mm; break-after: avoid; }
+  p { margin: 0 0 2.5mm; }
+  section { break-before: page; }
+  .cover { height: 255mm; display: flex; flex-direction: column; justify-content: center; }
+  .cover .tag { color: var(--accent); font-weight: 600; letter-spacing: .08em; text-transform: uppercase; font-size: 9.5pt; }
+  .cover h1 { font-size: 30pt; line-height: 1.15; margin: 3mm 0 4mm; }
+  .cover .sub { font-size: 13pt; color: var(--muted); max-width: 150mm; }
+  .cover .meta { margin-top: 14mm; font-size: 10pt; color: var(--muted); border-top: 1px solid var(--line); padding-top: 4mm; }
+  table { width: 100%; border-collapse: collapse; margin: 2mm 0 4mm; font-size: 9.8pt; break-inside: auto; }
+  th, td { text-align: left; vertical-align: top; padding: 1.6mm 2.2mm; border-bottom: 1px solid var(--line); }
+  th { background: #f6f8fa; font-weight: 600; }
+  tr { break-inside: avoid; }
+  code, .k { font-family: Consolas, "Cascadia Mono", monospace; font-size: 9.2pt; background: var(--code); padding: .2mm 1.2mm; border-radius: 1mm; }
+  .k { background: #eef1f4; font-family: "Segoe UI", Arial, sans-serif; font-weight: 600; font-size: 9.6pt; }
+  pre { font-family: Consolas, "Cascadia Mono", monospace; font-size: 9pt; background: var(--code); border: 1px solid var(--line);
+        border-radius: 1.5mm; padding: 2.5mm 3mm; white-space: pre-wrap; word-break: break-all; margin: 1.5mm 0 3mm; break-inside: avoid; }
+  ol.steps { counter-reset: s; list-style: none; padding: 0; margin: 2mm 0 4mm; }
+  ol.steps > li { counter-increment: s; position: relative; padding: 0 0 2.5mm 10mm; break-inside: avoid; }
+  ol.steps > li::before { content: counter(s); position: absolute; left: 0; top: .2mm; width: 6.5mm; height: 6.5mm; border-radius: 50%;
+        background: var(--accent); color: #fff; font-weight: 700; font-size: 9pt; display: flex; align-items: center; justify-content: center; }
+  .note, .warn { border-left: 3px solid var(--accent); background: var(--accent-soft); padding: 2.2mm 3mm; margin: 2mm 0 4mm; border-radius: 0 1.5mm 1.5mm 0; break-inside: avoid; }
+  .warn { border-color: var(--warn); background: var(--warn-soft); }
+  .note b:first-child, .warn b:first-child { display: block; margin-bottom: .5mm; }
+  .toc { columns: 2; column-gap: 10mm; padding-left: 5mm; }
+  .toc li { margin-bottom: 1mm; }
+  .figs { display: flex; gap: 4mm; margin: 2mm 0 2mm; break-inside: avoid; }
+  .figs figure { margin: 0; flex: 1; }
+  .figs img { width: 100%; border: 1px solid var(--line); border-radius: 1mm; display: block; }
+  figcaption { font-size: 8.8pt; color: var(--muted); margin-top: 1mm; }
+  .tree { display: flex; align-items: center; gap: 2mm; flex-wrap: wrap; margin: 2mm 0 4mm; font-size: 9.3pt; break-inside: avoid; }
+  .tree span.n { border: 1.5px solid var(--accent); border-radius: 1.5mm; padding: 1mm 2.5mm; background: #fff; font-weight: 600; }
+  .tree span.a { color: var(--muted); }
+  .two { display: flex; gap: 5mm; }
+  .two > div { flex: 1; }
+  .small { font-size: 9pt; color: var(--muted); }
+  .check { list-style: none; padding-left: 0; }
+  .check li::before { content: "\2610"; margin-right: 2mm; color: var(--accent); }
+</style>
+</head>
+<body>
+
+<div class="cover">
+  <div class="tag">Setup and user guide</div>
+  <h1>CorridorKey 2.0<br>for Nuke</h1>
+  <div class="sub">How to install the tool on another Windows PC (for example one with an RTX 3050 8 GB),
+    and how to key green and blue screen shots with it inside Nuke, step by step.</div>
+  <div class="meta">Tool version 0.1.0 &middot; Guide written 31 October 2026 &middot; Tested with Nuke 17.1v2 Non-commercial on Windows 11<br>
+    Share folder: <code>D:\CK2_bundle</code> (9.9 GB) &middot; Source: private repository suryateja963/nuke-corridor-plugin</div>
+</div>
+
+<section>
+  <h2>Contents</h2>
+  <ol class="toc">
+    <li>What is in the share folder</li>
+    <li>Before you start (checklist)</li>
+    <li>Copy the folder to the USB drive</li>
+    <li>Install on the other PC</li>
+    <li>Reading the setup checklist</li>
+    <li>First start in Nuke</li>
+    <li>Key an MP4 / MOV clip (step by step)</li>
+    <li>Key an EXR or DPX sequence</li>
+    <li>Using a Roto as a hint</li>
+    <li>Every panel setting explained</li>
+    <li>What you get back</li>
+    <li>Recommended settings for an RTX 3050 8 GB</li>
+    <li>The other menu items</li>
+    <li>Troubleshooting</li>
+    <li>Updating the tool later</li>
+    <li>One-page quick reference</li>
+  </ol>
+
+  <h3>How the tool works, in one paragraph</h3>
+  <p>Nuke does not run the AI model itself. When you press OK in the panel, the tool writes a small job
+    file and starts a separate engine program in the background. The engine turns your clip into a
+    linear EXR "plate", runs CorridorKey 2.0 on the graphics card, and writes the alpha (matte), the
+    foreground colour and a despilled foreground as EXR files. Nuke then loads these back for you,
+    already wired into a ready-to-use comp. You can keep working in Nuke while it runs.</p>
+
+  <h2 style="margin-top:8mm">1. What is in the share folder</h2>
+  <p>The folder <code>D:\CK2_bundle</code> on this laptop holds everything the other PC needs. Nothing has to
+    be downloaded from the internet.</p>
+  <table>
+    <tr><th>Item in the folder</th><th>What it is</th><th>Size</th></tr>
+    <tr><td><code>CorridorKey2\upstream</code></td><td>CorridorKey 2.0 program code, its weights and the foundation models it uses</td><td>4.8 GB</td></tr>
+    <tr><td><code>CorridorKey2\venv</code> and <code>.uv-python</code></td><td>The Python 3.12 environment with PyTorch for NVIDIA GPUs (CUDA 12.8)</td><td>4.9 GB</td></tr>
+    <tr><td><code>CorridorKey2\ComfyUI-CorridorKey2\ck2\worker.py</code></td><td>The worker program that drives CorridorKey for each job</td><td>small</td></tr>
+    <tr><td><code>CorridorKey2\ffmpeg</code></td><td>ffmpeg and ffprobe, used to read MP4/MOV video</td><td>about 0.2 GB</td></tr>
+    <tr><td><code>nuke plugin</code></td><td>The Nuke tool itself (menu, panel, engine, docs, tests)</td><td>small</td></tr>
+    <tr><td><code>install_bundle.ps1</code></td><td>The installer you run on the other PC</td><td>small</td></tr>
+    <tr><td><code>INSTALL.md</code> and this PDF</td><td>Instructions</td><td>small</td></tr>
+  </table>
+  <div class="note"><b>Licence</b>CorridorKey 2.0 and its weights are under the Corridor Key Licence (the file
+    <code>CorridorKey2\upstream\LICENSE</code>). This bundle is for your own machines.</div>
+</section>
+
+<section>
+  <h2>2. Before you start (checklist)</h2>
+  <p>Check these on the <b>other PC</b> (the one with the RTX 3050) before installing:</p>
+  <ul class="check">
+    <li><b>Windows 10 or 11, 64-bit.</b></li>
+    <li><b>NVIDIA driver version 570 or newer.</b> To check: press <span class="k">Start</span>, type <span class="k">cmd</span>, press Enter,
+      then type <code>nvidia-smi</code> and press Enter. The number after "Driver Version" must be 570 or higher.
+      If it is lower, or the command is not found, install the latest Game Ready or Studio driver from
+      nvidia.com (or the NVIDIA App) and restart the PC.</li>
+    <li><b>About 30 GB free</b> on the drive you install to: 10 GB for the tool, and at least 20 GB for shots.
+      Keyed EXR files are large.</li>
+    <li><b>Nuke is installed</b> (Non-commercial or commercial). It was tested on Nuke 17.1v2; any Nuke with
+      Python 3 should work.</li>
+    <li><b>A USB / external drive with at least 11 GB free</b> to carry the folder.</li>
+  </ul>
+  <div class="note"><b>Which drive letter?</b>The installer puts everything on <code>D:\</code> by default
+    (<code>D:\CorridorKey2</code>, <code>D:\nuke plugin</code>, shots in <code>D:\CKShots</code>). If the other PC
+    has no D: drive, or you prefer another drive, step 4 shows how to choose it.</div>
+
+  <h2 style="margin-top:8mm">3. Copy the folder to the USB drive</h2>
+  <p>Do this on <b>this laptop</b>.</p>
+  <ol class="steps">
+    <li>Plug in the USB drive. Open File Explorer and note its drive letter (for example <code>E:</code> or <code>F:</code>).</li>
+    <li>Open <code>D:\</code> in File Explorer. Right-click the folder <b>CK2_bundle</b> and choose <b>Copy</b>.</li>
+    <li>Open the USB drive, right-click an empty area and choose <b>Paste</b>. Copying 9.9 GB takes a few minutes
+      to half an hour depending on the drive.</li>
+    <li>When it finishes, check the copied folder: right-click it on the USB drive, choose <b>Properties</b>,
+      and confirm the size is about <b>9.9 GB</b>. A smaller size means the copy did not finish.</li>
+    <li>Eject the USB drive safely (right-click it in File Explorer, <b>Eject</b>).</li>
+  </ol>
+  <div class="note"><b>Any USB format works</b>The largest single file in the folder is 2.5 GB (the CorridorKey weights),
+    so drives formatted as FAT32, exFAT or NTFS can all hold it.</div>
+</section>
+
+<section>
+  <h2>4. Install on the other PC</h2>
+  <ol class="steps">
+    <li><b>Close Nuke</b> if it is open.</li>
+    <li>Plug the USB drive into the other PC and note its drive letter. The examples below use <code>E:</code>;
+      replace it with yours.</li>
+    <li>Press <span class="k">Start</span>, type <span class="k">PowerShell</span>, and open <b>Windows PowerShell</b>
+      (normal, not "as administrator").</li>
+    <li>Copy this line, paste it into PowerShell (right-click pastes), and press Enter:
+      <pre>powershell -ExecutionPolicy Bypass -File "E:\CK2_bundle\install_bundle.ps1"</pre>
+      This installs to the <b>D:</b> drive. To install to another drive instead, add <code>-Root</code> and
+      <code>-Shots</code>, for example for the C: drive:
+      <pre>powershell -ExecutionPolicy Bypass -File "E:\CK2_bundle\install_bundle.ps1" -Root "C:\" -Shots "C:\CKShots"</pre></li>
+    <li>Wait. It prints "Copying the engine..." and copies about 10 GB from the USB drive, which usually takes
+      5 to 20 minutes. Do not close the window.</li>
+    <li>It then prints "Adding the CorridorKey 2.0 menu to Nuke..." and finally a <b>setup checklist</b>
+      (next page). When every line says <b>PASS</b>, the install is done.</li>
+  </ol>
+
+  <h3>What the installer does</h3>
+  <table>
+    <tr><th>Step</th><th>Detail</th></tr>
+    <tr><td>Copies the engine</td><td>To <code>&lt;drive&gt;\CorridorKey2</code></td></tr>
+    <tr><td>Copies the tool</td><td>To <code>&lt;drive&gt;\nuke plugin</code></td></tr>
+    <tr><td>Fixes the Python environment</td><td>Points it at its copied interpreter so it works from the new location</td></tr>
+    <tr><td>Writes <code>settings.local.json</code></td><td>Inside <code>nuke plugin</code>, with this PC's paths for the engine, ffmpeg and the shots folder</td></tr>
+    <tr><td>Adds the Nuke menu</td><td>Adds one line to <code>C:\Users\&lt;you&gt;\.nuke\init.py</code> so Nuke loads the tool at start-up</td></tr>
+    <tr><td>Runs the setup check</td><td>Prints PASS or FAIL for each requirement</td></tr>
+  </table>
+  <div class="note"><b>Nothing else is changed</b>The installer does not install drivers, change system settings,
+    or need administrator rights. Your other Nuke settings and plug-ins are left alone.</div>
+</section>
+
+<section>
+  <h2>5. Reading the setup checklist</h2>
+  <p>A good result looks like this (the GPU line will name your RTX 3050):</p>
+  <pre>PASS  engine files                       all present
+PASS  ffmpeg / ffprobe                   ffmpeg version 8.1.2-full_build-www.gyan.dev (zscale ok)
+PASS  NVIDIA driver                      driver 5xx.xx or newer
+PASS  GPU from the engine python         NVIDIA GeForce RTX 3050, 8.0 GB, torch 2.9.1+cu128 CUDA 12.8
+PASS  shots folder                       D:\CKShots writable, NN GB free
+PASS  Nuke menu hook                     C:\Users\you\.nuke\init.py
+
+All good - start Nuke and look for the CorridorKey 2.0 menu.</pre>
+  <table>
+    <tr><th>Line</th><th>What it checks</th><th>If it says FAIL</th></tr>
+    <tr><td>engine files</td><td>CorridorKey code, weights, foundation models and worker are present</td><td>The copy was incomplete. Re-copy the bundle to the USB drive and run the installer again.</td></tr>
+    <tr><td>ffmpeg / ffprobe</td><td>Video reading tools run and support the colour conversion filter</td><td>Open <code>nuke plugin\settings.local.json</code> and check the ffmpeg paths point at <code>CorridorKey2\ffmpeg\ffmpeg.exe</code>.</td></tr>
+    <tr><td>NVIDIA driver</td><td>Driver is 570 or newer</td><td>Update the NVIDIA driver, restart, run the check again (command below).</td></tr>
+    <tr><td>GPU from the engine python</td><td>PyTorch can use the graphics card and run a test calculation</td><td>Almost always the driver. Update it and restart.</td></tr>
+    <tr><td>shots folder</td><td>The shots folder can be written and has 20+ GB free</td><td>Free some space, or choose another drive with <code>-Shots</code>.</td></tr>
+    <tr><td>Nuke menu hook</td><td>Nuke's start-up file loads this tool</td><td>Run the hook command below, then restart Nuke.</td></tr>
+  </table>
+  <h3>Useful commands (run in PowerShell or cmd)</h3>
+  <p>Run the setup check again at any time (change <code>D:</code> if you installed elsewhere):</p>
+  <pre>D:\CorridorKey2\venv\Scripts\python.exe "D:\nuke plugin\tools\check_setup.py"</pre>
+  <p>Add the Nuke menu again:</p>
+  <pre>D:\CorridorKey2\venv\Scripts\python.exe "D:\nuke plugin\install_nuke_hook.py"</pre>
+  <p>Remove the Nuke menu (uninstall from Nuke):</p>
+  <pre>D:\CorridorKey2\venv\Scripts\python.exe "D:\nuke plugin\install_nuke_hook.py" --remove</pre>
+</section>
+
+<section>
+  <h2>6. First start in Nuke</h2>
+  <ol class="steps">
+    <li>Start Nuke as usual.</li>
+    <li>In the top menu bar you now see <span class="k">CorridorKey 2.0</span>. Its items are:
+      <span class="k">Key shot...</span>, <span class="k">Prepare plate only...</span>,
+      <span class="k">Load latest key of a shot...</span>, <span class="k">Clean up a shot...</span> and <span class="k">About</span>.</li>
+    <li>Click <span class="k">CorridorKey 2.0 &rarr; About</span>. It shows the tool folder, the engine Python and the shots folder.
+      These should point at the drive you installed to.</li>
+  </ol>
+  <div class="note"><b>Nuke Non-commercial limits</b>Nuke NC cannot read MP4/MOV files and renders at most 1920&times;1080.
+    The tool works around both: it decodes video itself (section 7), and it scales Roto hints from NC to the plate size.
+    Keys themselves are always made at the full plate resolution, including 4K.</div>
+
+  <h2 style="margin-top:8mm">7. Key an MP4 / MOV clip (step by step)</h2>
+  <p>Use this for phone or camera video. Because Nuke NC cannot open MP4/MOV, you first let the tool make a plate.</p>
+  <ol class="steps">
+    <li>Click <span class="k">CorridorKey 2.0 &rarr; Prepare plate only...</span>. The panel opens with "prepare plate only" ticked.</li>
+    <li><b>source</b> is set to "File on disk". Click the folder icon next to <b>file</b> and pick your video.</li>
+    <li><b>shot name</b> fills in from the file name; change it if you like. <b>shots folder</b> is where the files go
+      (default <code>D:\CKShots</code>).</li>
+    <li>Set <b>colour space</b> to what the camera recorded. For normal phone video use
+      "sRGB / Rec.709 video (phone, most cameras)". For log footage choose the camera's log (for example Sony S-Log3).
+      Never key log footage as sRGB.</li>
+    <li>Leave <b>first</b>/<b>last</b> at 0 / 0 for the whole clip, or type a frame range (video frame 1 is the first frame).</li>
+    <li>Click <b>OK</b>. A progress bar shows "preparing plate". When it finishes, a <b>Read</b> node with the linear EXR plate
+      appears in the node graph.</li>
+    <li>(Optional) Draw a <b>Roto</b> around the subject on this plate to help the model pick the right person or object.
+      See section 9.</li>
+    <li>Select the plate Read (and the Roto, if you made one; hold Shift to select both).</li>
+    <li>Click <span class="k">CorridorKey 2.0 &rarr; Key shot...</span>. Check the settings (the defaults are good for most shots),
+      then click <b>OK</b>.</li>
+    <li>A progress bar shows the stages: preparing, loading the model, keying windows, writing frames, despill.
+      You can keep working in Nuke. <b>Cancel</b> on the progress bar stops the key.</li>
+    <li>When it finishes, a Backdrop appears with the plate, alpha, foreground and a finished comp (section 11).</li>
+  </ol>
+  <div class="note"><b>Tip: preview first</b>Tick <b>preview only</b> and set <b>frames</b> to 16 or 24. The tool keys just the
+    first frames into a "preview" folder, so you can check the colour space and settings in about a minute before keying the whole shot.</div>
+  <div class="note"><b>One step instead of two</b>If you do not need a Roto hint, you can skip "Prepare plate only": open
+    <span class="k">Key shot...</span> with nothing selected, pick the video under "File on disk" and click OK. The plate is made and keyed in one go.</div>
+</section>
+
+<section>
+  <h2>8. Key an EXR or DPX sequence</h2>
+  <ol class="steps">
+    <li>Bring the sequence in with a normal <b>Read</b> node.</li>
+    <li>Select the Read (and a Roto hint if you have one).</li>
+    <li>Click <span class="k">CorridorKey 2.0 &rarr; Key shot...</span>. The panel shows the Read's file, frame range and size,
+      and picks "Linear Rec.709 (EXR plates)" for EXR files. If your EXRs are ACEScg, choose "ACEScg (linear AP1 EXR)" instead.</li>
+    <li>Check the <b>shot name</b> and <b>shots folder</b>, then click <b>OK</b>.</li>
+  </ol>
+
+  <h2 style="margin-top:8mm">9. Using a Roto as a hint</h2>
+  <p>A hint tells the model which subject to key. It helps most when there are several people or objects, or when the
+    model keeps something you do not want.</p>
+  <ol class="steps">
+    <li>View the plate and create a <b>Roto</b> node. Draw a shape around the subject on the <b>first frame</b> of the range.
+      White inside the shape means "keep this".</li>
+    <li>Select the plate Read <b>and</b> the Roto, then open <span class="k">Key shot...</span>. The <b>hint</b> setting switches to
+      "Selected node, first frame (e.g. Roto)" by itself.</li>
+    <li>Set <b>hint quality</b> to match how careful the shape is: <b>0.95</b> for careful roto, <b>0.75</b> for a rough box or
+      loose shape, <b>0.5</b> for a scribble. A rough shape at 0.95 makes the model trust the shape too much, and screen can
+      be left inside it.</li>
+    <li>For a subject that moves a lot, animate the Roto and choose "Selected node, every frame".</li>
+  </ol>
+  <table>
+    <tr><th>Hint option</th><th>When to use it</th></tr>
+    <tr><td>None (model picks the subject)</td><td>One clear subject. Try this first.</td></tr>
+    <tr><td>Selected node, first frame (e.g. Roto)</td><td>Point at the subject once; the model follows it through the shot.</td></tr>
+    <tr><td>Selected node, every frame</td><td>An animated Roto or matte for every frame.</td></tr>
+    <tr><td>Matte file, first frame</td><td>A matte image on disk instead of a node.</td></tr>
+    <tr><td>Matte file / sequence, every frame</td><td>A matte image sequence or a matte video on disk.</td></tr>
+  </table>
+  <p class="small">The <b>invert</b> tick box swaps black and white in the hint (use it if your matte is black on the subject).</p>
+</section>
+
+<section>
+  <h2>10. Every panel setting explained</h2>
+  <table>
+    <tr><th style="width:26%">Setting</th><th style="width:18%">Default</th><th>What it does</th></tr>
+    <tr><th colspan="3">Source</th></tr>
+    <tr><td>source</td><td>Selected Read</td><td>Key the selected Read node, or a "File on disk" (needed for MP4/MOV).</td></tr>
+    <tr><td>file</td><td>empty</td><td>The video, image sequence or folder to key when source is "File on disk".</td></tr>
+    <tr><th colspan="3">Shot</th></tr>
+    <tr><td>shot name</td><td>from the file name</td><td>Name of the shot folder. Each shot gets its own folder.</td></tr>
+    <tr><td>shots folder</td><td>D:\CKShots</td><td>Where shot folders are created. Needs plenty of free space.</td></tr>
+    <tr><th colspan="3">Colour</th></tr>
+    <tr><td>colour space</td><td>sRGB / Rec.709 (EXR: Linear Rec.709)</td><td>What the footage was recorded in: sRGB/Rec.709 video, Linear Rec.709, ACEScg, Sony S-Log3 (S-Gamut3 or .Cine), Panasonic V-Log, Apple Log, HLG HDR, PQ HDR, Auto, or an OCIO name.</td></tr>
+    <tr><td>OCIO name</td><td>empty</td><td>Only for "Other: OCIO colour space by name".</td></tr>
+    <tr><td>YUV matrix</td><td>auto</td><td>How video colour is decoded. Leave on auto unless colours look shifted.</td></tr>
+    <tr><td>range</td><td>auto</td><td>Video levels. If the plate looks washed out or too contrasty, try limited or full.</td></tr>
+    <tr><td>out-of-gamut</td><td>clamp</td><td>What to do with colours outside Rec.709 from wide-gamut footage. Leave on clamp.</td></tr>
+    <tr><th colspan="3">Frames</th></tr>
+    <tr><td>first / last</td><td>0 / 0 (whole clip)</td><td>Which frames to key. For video, frame 1 is the first frame.</td></tr>
+    <tr><td>plate starts at</td><td>1001</td><td>Frame number the plate starts at in Nuke (video only; sequences keep their numbers).</td></tr>
+    <tr><td>preview only / frames</td><td>off / 24</td><td>Key only the first N frames into a preview folder to test settings quickly.</td></tr>
+    <tr><th colspan="3">Hint</th></tr>
+    <tr><td>hint, node, matte file, invert</td><td>None</td><td>See section 9.</td></tr>
+    <tr><td>hint quality</td><td>0.95</td><td>How much to trust the hint: 0.95 careful roto, 0.75 rough matte, 0.5 scribble.</td></tr>
+    <tr><th colspan="3">Output</th></tr>
+    <tr><td>despill</td><td>1.0</td><td>Strength of green/blue spill removal in the extra "fg_despill" pass. 0 turns the pass off.</td></tr>
+    <tr><td>screen</td><td>green</td><td>The screen colour: green or blue.</td></tr>
+    <tr><td>despill where</td><td>edges + bounce</td><td>"edges + bounce" removes spill on soft edges and green light reflected onto the subject, but keeps green clothing green. "everywhere" removes all green, which greys out green objects at 1.0.</td></tr>
+    <tr><td>crop to subject / margin</td><td>auto / 64</td><td>"auto" finds the subject and keys only the box around it, then puts the result back full size. Faster and uses less GPU memory. It keys the full frame by itself when the subject fills the frame.</td></tr>
+    <tr><td>refine matte</td><td>hair/fur</td><td>Clean-up after keying. "hair/fur" removes stray specks and steadies flickering edges, keeping fine strands. "solid" also fills small holes and firms edges (people in clothes, props). "off" leaves the matte untouched.</td></tr>
+    <tr><td>grow/shrink px</td><td>0</td><td>Moves the matte edge out (positive) or in (negative) by that many pixels.</td></tr>
+    <tr><td>window</td><td>auto</td><td>How many frames the model looks at together. "auto" picks the largest that fits the GPU. Lower (8 or 4) if you get memory errors.</td></tr>
+    <tr><td>low VRAM</td><td>off</td><td>Uses less GPU memory at some cost in speed. Turn on for 4K or after a memory error.</td></tr>
+    <tr><td>prepare plate only</td><td>off</td><td>Only make the plate (no key), so you can draw a Roto on it first.</td></tr>
+  </table>
+</section>
+
+<section>
+  <h2>11. What you get back</h2>
+  <p>When a key finishes, the tool adds a labelled Backdrop to the node graph containing:</p>
+  <div class="tree">
+    <span class="n">plate</span><span class="a">(original, linear)</span>
+    <span class="n">fg</span><span class="a">(despilled colour)</span><span class="a">+</span>
+    <span class="n">alpha</span><span class="a">&rarr;</span><span class="n">Copy</span><span class="a">&rarr;</span><span class="n">Premult</span><span class="a">&rarr;</span>
+    <span class="n">Merge (over)</span><span class="a">&larr;</span><span class="n">grey BG</span>
+  </div>
+  <p>Replace the grey background with your own plate to comp. All Reads are set to linear and the full plate resolution.</p>
+  <div class="figs">
+    <figure><img src="img/nuke_comp_rabbit.jpg"><figcaption>Rendered from Nuke with the default settings: white fur keeps no green tint, auto-crop used.</figcaption></figure>
+    <figure><img src="img/nuke_comp_greenoutfit.jpg"><figcaption>Green clothes on a green screen: "edges + bounce" despill keeps the clothing green.</figcaption></figure>
+  </div>
+
+  <h3>The shot folder on disk</h3>
+  <pre>D:\CKShots\&lt;shot&gt;\
+  job.json  status.json  log.txt   settings used, result, full log
+  plate_lin\   plate.1001.exr ...  linear plate (reused when you key again)
+  hint\                            hint images made from your Roto
+  key\v001\    alpha\  fg\  fg_despill\     first key
+  key\v002\    ...                          each new key is a new version
+  key\preview\                              preview keys (overwritten each time)</pre>
+  <p>Keys are never overwritten: every full key makes a new version folder (v001, v002...). Only <code>preview</code> is replaced.</p>
+</section>
+
+<section>
+  <h2>12. Recommended settings for an RTX 3050 8 GB</h2>
+  <p>The RTX 3050 has the same 8 GB of memory as the laptop the tool was tested on, so the same settings apply.
+    It is a slower card, so keys take longer. Speed on the RTX 3050 has not been measured yet.
+    For reference, on the RTX 5060 Laptop a 16-frame 1080p shot took about 60 to 75 seconds in total (most of it is
+    loading the model, which happens once per key), and 4K took about 95 seconds plus 4.5 seconds per frame.</p>
+  <table>
+    <tr><th>Footage</th><th>Recommended settings</th></tr>
+    <tr><td>HD / 1080p (most shots)</td><td>Leave the defaults: window auto, low VRAM off, crop auto, despill 1.0 edges + bounce, refine hair/fur.</td></tr>
+    <tr><td>2K / 1440p</td><td>Defaults. If you get a memory error, tick low VRAM.</td></tr>
+    <tr><td>4K / UHD</td><td>Tick <b>low VRAM</b>. Keep crop on auto (it helps a lot when the subject does not fill the frame).
+      Use a preview of 16 frames first. If it still runs out of memory, set window to 8, then 4.</td></tr>
+    <tr><td>Long shots (hundreds of frames)</td><td>Fine: the engine works through the shot window by window. Make sure the shots drive has room
+      (4K needs about 25 MB per frame per pass).</td></tr>
+  </table>
+  <div class="note"><b>Free up GPU memory before a big key</b>Close web browsers, DaVinci Resolve, games and other GPU apps.
+    In Nuke, set the Viewer to a small frame or proxy while the key runs. The model needs about 4 to 6 GB.</div>
+
+  <h3>Hair and fur shots</h3>
+  <ul>
+    <li>Defaults are tuned for hair and fur: despill "edges + bounce" removes green light on white fur, and refine "hair/fur" keeps fine strands.</li>
+    <li>If small patches of screen stay green inside the subject (for example a gap between an animal's legs), draw a Roto hint
+      around the subject with hint quality 0.75, or set despill where to "everywhere" if the subject has no green in it.</li>
+    <li>Fur tips come out as soft gradients rather than single hairs. That is the model's limit, not a setting.</li>
+  </ul>
+</section>
+
+<section>
+  <h2>13. The other menu items</h2>
+  <table>
+    <tr><th>Menu item</th><th>What it does</th></tr>
+    <tr><td>Load latest key of a shot...</td><td>Pick a shot folder; the newest key is loaded into Nuke as the same Backdrop comp. Use it after reopening Nuke, or for keys made on the command line.</td></tr>
+    <tr><td>Clean up a shot...</td><td>Pick a shot folder; it deletes temporary files, previews, hint renders and older key versions to free disk space. It always keeps the newest version, and asks before deleting the plate.</td></tr>
+    <tr><td>About</td><td>Shows the version, tool folder, engine Python, shots folder and settings file.</td></tr>
+  </table>
+
+  <h3>Keying without Nuke (optional)</h3>
+  <p>Every key is described by a <code>job.json</code> in the shot folder. To run a job again, or many jobs one after another,
+    from cmd:</p>
+  <pre>"D:\nuke plugin\run_job.bat" "D:\CKShots\myshot\job.json"
+"D:\nuke plugin\run_queue.bat" "D:\CKShots"</pre>
+  <p class="small">run_queue.bat keys every job.json it finds under the folder. Load the results with "Load latest key of a shot...".</p>
+</section>
+
+<section>
+  <h2>14. Troubleshooting</h2>
+  <p>Every key writes <code>log.txt</code> and <code>status.json</code> in its shot folder. Open <code>log.txt</code> first; the last lines say what went wrong.</p>
+  <table>
+    <tr><th style="width:32%">Message or problem</th><th>What to do</th></tr>
+    <tr><td>No CorridorKey 2.0 menu in Nuke</td><td>Run the "Add the Nuke menu" command from section 5 and restart Nuke. Check <code>C:\Users\&lt;you&gt;\.nuke\init.py</code> contains a line ending in "CorridorKey 2.0 tool".</td></tr>
+    <tr><td>"The GPU ran out of memory"</td><td>Close other GPU apps, make the Nuke Viewer small, tick low VRAM, or set window to 8 or 4. See section 12.</td></tr>
+    <tr><td>"CorridorKey venv python not found" or "weights missing"</td><td>Paths are wrong. Run the setup check (section 5); re-run the installer if files are missing.</td></tr>
+    <tr><td>"ffmpeg not found"</td><td>Check the ffmpeg lines in <code>nuke plugin\settings.local.json</code>.</td></tr>
+    <tr><td>Key looks washed out or too contrasty</td><td>Wrong colour space or range. Check the camera setting; try range "limited" or "full".</td></tr>
+    <tr><td>Green screen left inside the subject</td><td>Add a Roto hint (quality 0.75 for a rough shape). If you used a rough Roto at 0.95, lower it to 0.75.</td></tr>
+    <tr><td>"the first-frame hint is empty"</td><td>The Roto has no shape on the first frame of the range, or invert is ticked by mistake.</td></tr>
+    <tr><td>"hint sequence has N frames but the plate needs M"</td><td>The hint covers a different frame range from the key. Use the same first/last.</td></tr>
+    <tr><td>"this shot is already being keyed"</td><td>Another key of this shot is running. Wait or cancel it. If nothing is running, delete the file <code>.running</code> in the shot folder.</td></tr>
+    <tr><td>"Disk full"</td><td>Free space or use "Clean up a shot...".</td></tr>
+    <tr><td>"camera raw can't be decoded"</td><td>BRAW, R3D and ARRIRAW are not supported. Export to EXR (or ProRes) from the camera software first.</td></tr>
+    <tr><td>Warning in log.txt or Nuke's Script Editor: "the subject touches the crop box edge"</td><td>Part of the subject may be cut off. Raise the crop margin (for example 128) or set crop to off, and key again.</td></tr>
+  </table>
+</section>
+
+<section>
+  <h2>15. Updating the tool later</h2>
+  <p>When the tool is improved on the first laptop, there are two ways to bring the changes to the other PC:</p>
+  <div class="two">
+    <div>
+      <h3>A. With GitHub access on the other PC</h3>
+      <p>The <code>nuke plugin</code> folder is a git copy of the private repository. If Git is installed and signed in to
+        the GitHub account that owns the repository:</p>
+      <pre>cd /d "D:\nuke plugin"
+git pull</pre>
+      <p>Restart Nuke afterwards.</p>
+    </div>
+    <div>
+      <h3>B. Without GitHub (USB again)</h3>
+      <ol class="steps">
+        <li>On the first laptop, rebuild the share folder:
+          <pre>powershell -ExecutionPolicy Bypass -File "D:\nuke plugin\tools\make_bundle.ps1" -Dest "D:\CK2_bundle"</pre></li>
+        <li>Copy it to the USB drive and run <code>install_bundle.ps1</code> on the other PC again, as in section 4.</li>
+      </ol>
+      <p class="small">Reinstalling replaces the program files only. Your shots in the shots folder are not touched.</p>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2>16. One-page quick reference</h2>
+  <h3>Install (once)</h3>
+  <pre>powershell -ExecutionPolicy Bypass -File "E:\CK2_bundle\install_bundle.ps1"            (installs to D:)
+powershell -ExecutionPolicy Bypass -File "E:\CK2_bundle\install_bundle.ps1" -Root "C:\" -Shots "C:\CKShots"</pre>
+  <h3>Check the setup</h3>
+  <pre>D:\CorridorKey2\venv\Scripts\python.exe "D:\nuke plugin\tools\check_setup.py"</pre>
+  <h3>Key a phone / camera video</h3>
+  <ol class="steps">
+    <li>CorridorKey 2.0 &rarr; Prepare plate only... &rarr; pick the file, set the colour space &rarr; OK.</li>
+    <li>(Optional) Roto around the subject on the first frame.</li>
+    <li>Select the plate Read (+ Roto) &rarr; CorridorKey 2.0 &rarr; Key shot... &rarr; OK.</li>
+  </ol>
+  <h3>Key an EXR sequence</h3>
+  <ol class="steps">
+    <li>Select its Read (+ Roto) &rarr; CorridorKey 2.0 &rarr; Key shot... &rarr; OK.</li>
+  </ol>
+  <h3>Good defaults to remember</h3>
+  <table>
+    <tr><td>Phone video</td><td>sRGB / Rec.709</td><td>Rough Roto</td><td>hint quality 0.75</td></tr>
+    <tr><td>Careful Roto</td><td>hint quality 0.95</td><td>4K on RTX 3050</td><td>low VRAM on, preview 16 first</td></tr>
+    <tr><td>Green clothes on green</td><td>despill where: edges + bounce</td><td>Hard-edged subject</td><td>refine: solid</td></tr>
+    <tr><td>Memory error</td><td>low VRAM, window 8 then 4</td><td>Disk full</td><td>Clean up a shot...</td></tr>
+  </table>
+  <h3>Where things are</h3>
+  <table>
+    <tr><td>Tool</td><td><code>D:\nuke plugin</code></td></tr>
+    <tr><td>Engine</td><td><code>D:\CorridorKey2</code></td></tr>
+    <tr><td>Shots</td><td><code>D:\CKShots\&lt;shot&gt;</code> &mdash; log.txt, key\v001\alpha, fg, fg_despill</td></tr>
+    <tr><td>This PC's paths</td><td><code>D:\nuke plugin\settings.local.json</code></td></tr>
+  </table>
+</section>
+
+</body>
+</html>
