@@ -127,3 +127,23 @@ run were 15–30 s higher, but that came from the machine state: the despill ste
 
 **Still open for hair/fur:** soft fur tips (needs refinement or the model, candidate 3), and a flicker
 metric that ignores real motion (candidate 5).
+
+## Real-Nuke check (2026-10-31)
+
+`tests\run_nuke_auto.ps1 -Module nuke_crop_despill_test -ReportName nuke_crop_despill_report.txt`
+keys rabbit and greenoutfit (16 frames each) through the panel's own defaults in Nuke 17.1v2 NC:
+**11/11 pass.**
+- The panel defaults are crop auto with margin 64, and despill 1.0 "edges + bounce". The job.json
+  the panel writes carries both settings.
+- rabbit: keyed a 1024×1024 crop at (396,56). The comp's alpha Read is the full 1920×1080, with alpha
+  1.000 on the rabbit and 0.000 in the corner. Green bounce on bright fur went from 0.111 to 0.000
+  over 51k px.
+- greenoutfit: correctly fell back to the full frame ("subject spans most of the frame"). The green
+  clothing keeps 99.9% of its green over 291k px.
+- Both comps render from Nuke (`_g2_out\nuke_comp_rabbit.png`, `nuke_comp_greenoutfit.png`).
+
+**Known limit:** where the matte wrongly marks screen as solid (alpha 1), such as the gap between the
+rabbit's front legs and a few dark neck spots, the screen shows as bright green and edge despill
+leaves it, because it can't tell it apart from a green object. The fix belongs in the matte: a hint
+(Roto), or the refinement pass (candidate 3). "despill where: everywhere" at 1.0 also removes it,
+but it greys green clothing.
