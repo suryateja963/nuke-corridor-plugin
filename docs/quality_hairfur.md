@@ -147,3 +147,55 @@ rabbit's front legs and a few dark neck spots, the screen shows as bright green 
 leaves it, because it can't tell it apart from a green object. The fix belongs in the matte: a hint
 (Roto), or the refinement pass (candidate 3). "despill where: everywhere" at 1.0 also removes it,
 but it greys green clothing.
+
+## Run 4: matte refinement + despill tuning (2026-10-31)
+
+`tests\hair_fur_batch.py --crop auto --despill edges --refine hairfur --out hairfur_refine`, compared
+with run 3 by `tests\compare_hairfur.py hairfur_despill hairfur_refine`. The comparison now also
+reports **static flicker**: edge flicker counted only where the plate itself barely changed (max
+|Δplate| < 0.01), so real hair motion doesn't count. This is candidate 5.
+
+**What the rabbit's green patches turned out to be:** shadowed screen seen between the legs and
+through dark neck spots, which the matte held as solid. They are darker and duller than the open
+screen (ratio about 0.46), so they sat inside the old fade zone (0.45–0.6) and got only about half
+despilled. The pack's refinement ops (clean, levels, grow, temporal smoothing) can't fix this: they
+see alpha = 1, which looks like the subject. I moved the despill fade zone to **0.5–0.65** instead.
+On real frames that cuts these patches by ~60%, and the green outfit still keeps 98% of its green.
+0.55–0.7 would cut them by ~85%, but the outfit drops to 94.6%.
+
+Green patch pixels inside the rabbit matte (alpha > 0.5, green ratio > 0.3), frames 1031 / 1039 / 1046:
+run 2: 2034 / 1671 / 2613 → run 3: 1215 / 1349 / 1980 → run 4: **726 / 804 / 1297**.
+
+**New: `ck_engine/refine.py`**, ported from the ComfyUI pack. It works per frame with a rolling
+window and swaps the results in only at the end, so a cancel leaves the key intact. The steps run in
+this order: clean specks and holes → levels → grow/shrink → temporal smoothing (only where frames
+agree). Presets:
+- `hairfur`: specks under 40 px removed, plus temporal radius 1 at threshold 0.08.
+- `solid`: also fills holes and firms the edges with levels.
+
+| clip | flicker run 3 → 4 | static flicker | soft edge % | spill |
+|---|---|---|---|---|
+| girlhair | .0202 → .0177 | .0143 → .0121 | 1.88 → 1.88 | .000 → .000 |
+| greenoutfit | .0572 → .0561 | .0547 → .0541 | 0.64 → 0.67 | .020 → .018 |
+| manhair | .1007 → .0973 | .0101 → .0153 | 1.89 → 1.91 | .000 → .000 |
+| womanblue | .0861 → .0835 | .0152 → .0176 | 0.98 → 1.01 | .000 → .000 |
+| womangreen | .0159 → .0137 | .0068 → .0069 | 1.01 → 1.00 | .003 → .002 |
+| cat | .0216 → .0193 | .0049 → .0054 | 2.50 → 2.50 | .000 → .000 |
+| fluffykitten | .0134 → .0113 | .0053 → .0047 | 2.36 → 2.36 | .003 → .002 |
+| gingerkitten | .0631 → .0608 | .0158 → .0177 | 5.51 → 5.49 | .000 → .000 |
+| lyingkitten | .0652 → .0617 | .0137 → .0148 | 4.02 → 4.03 | .005 → .003 |
+| rabbit | .0611 → .0584 | .0196 → .0168 | 0.99 → 0.98 | .003 → .002 |
+
+**Result:** overall edge flicker drops 3–16% on every clip, and soft-edge detail is kept (no strands
+lost; no ghosting on manhair's flying hair in the close-ups). Static flicker is mixed (4 down, 5 up,
+1 flat), so the steadying effect of radius 1 is small. The model's own temporal windows already do
+most of that work. Fur-tip softness is unchanged: that needs the model, not a post-process.
+
+**Real Nuke (2026-10-31):** `nuke_crop_despill_test` passes **11/11**. Panel defaults are crop auto,
+despill 1.0 edges + bounce, and refine hair/fur grow 0. The job and log show `refine: hairfur`. Green
+bounce on fur goes from 0.111 to 0.000, and the outfit keeps 99.9% of its green. In Nuke's own comp,
+the rabbit's leg gap is now dark with only a faint green trace.
+
+**Panel default:** refine "hair/fur" (gentle: it only touches specks and frame-to-frame jitter).
+"solid" is for hard-edged subjects, and "grow/shrink px" moves the edge. The job schema default stays
+`off`.

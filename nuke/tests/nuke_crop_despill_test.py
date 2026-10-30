@@ -1,4 +1,4 @@
-r"""Automatic real-Nuke test of auto-crop and edge-aware despill, on hair/fur clips.
+r"""Automatic real-Nuke test of auto-crop, edge-aware despill and matte refine, on hair/fur clips.
 
     powershell -ExecutionPolicy Bypass -File tests\run_nuke_auto.ps1 -Module nuke_crop_despill_test -ReportName nuke_crop_despill_report.txt
 
@@ -58,9 +58,9 @@ def c_defaults():
     from ck2nuke import panel
     p = panel.KeyPanel(None, None, False)
     got = (p.k["crop"].value(), int(p.k["crop_margin"].value()), float(p.k["despill"].value()),
-           p.k["despill_mode"].value())
-    ok = got == ("auto", 64, 1.0, "edges + bounce")
-    return ("PASS" if ok else "FAIL"), "crop {} margin {}, despill {} {}".format(*got)
+           p.k["despill_mode"].value(), p.k["refine"].value(), int(p.k["refine_grow"].value()))
+    ok = got == ("auto", 64, 1.0, "edges + bounce", "hair/fur", 0)
+    return ("PASS" if ok else "FAIL"), "crop {} margin {}, despill {} {}, refine {} grow {}".format(*got)
 
 
 def _measure(status_path):
@@ -85,14 +85,15 @@ def _check(clip, status):
     tag = "CK2_{}_{}".format(clip, status.get("version"))
     names = {k: tag + "_" + k for k in ("alpha", "fg", "premult", "over")}
     missing = [n for n in names.values() if not nc.exists(n)]
-    job_ok = job["crop"]["mode"] == "auto" and job["despill"] == {"amount": 1.0, "screen": "green", "mode": "edges"}
+    job_ok = job["crop"]["mode"] == "auto" and job["despill"] == {"amount": 1.0, "screen": "green", "mode": "edges"}         and job["refine"] == {"preset": "hairfur", "grow": 0} and "refine: hairfur" in open(
+            os.path.join(shot, "log.txt"), encoding="utf-8").read()
     # A subject filling most of the frame (greenoutfit) correctly keys the full frame.
     log = open(os.path.join(shot, "log.txt"), encoding="utf-8").read()
     how = next((l[6:] for l in log.splitlines()[::-1] if l.startswith("crop: ")), "?")
     crop_ok = bool(crop) or "keying the full frame" in how
     rec(label, "PASS" if job_ok and crop_ok and not missing else "FAIL",
-        "{} {}x{}; job crop={} despill={}; crop: {}; {}".format(
-            status.get("version"), W, H, job["crop"]["mode"], job["despill"], how,
+        "{} {}x{}; job crop={} despill={} refine={}; crop: {}; {}".format(
+            status.get("version"), W, H, job["crop"]["mode"], job["despill"], job["refine"], how,
             "comp nodes ok" if not missing else "missing " + str(missing)))
     if missing:
         return

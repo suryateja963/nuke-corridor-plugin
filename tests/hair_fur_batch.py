@@ -1,7 +1,7 @@
 r"""Hair and fur quality batch: key real clips, build review sheets and edge metrics.
 
     D:\CorridorKey2\venv\Scripts\python.exe tests\hair_fur_batch.py [--frames 16] [--first 31] [--only cat,manhair]
-        [--crop auto] [--despill edges] [--out hairfur_crop]
+        [--crop auto] [--despill edges] [--refine hairfur] [--out hairfur_crop]
 
 For every clip in D:\CorridorKey2\test_clips\{hair,animals}\raw it runs the
 engine (same as the Nuke panel), then writes to _e2e_out\<--out>\ (default hairfur):
@@ -51,6 +51,7 @@ def label(img, text):
     return img
 
 
+REFINE = "off"
 DESPILL = {"amount": 0.5}  # --despill edges -> {"amount": 1.0, "mode": "edges"}
 
 
@@ -58,7 +59,7 @@ def key_clip(clip: Path, first: int, frames: int, crop: str):
     shot = OUT / "shots" / clip.stem
     shot.mkdir(parents=True, exist_ok=True)
     job = {"schema_version": 1, "source": {"path": str(clip)}, "colour": {"space": "srgb_rec709"},
-           "frames": {"first": first, "last": first + frames - 1}, "despill": DESPILL, "crop": {"mode": crop}}
+           "frames": {"first": first, "last": first + frames - 1}, "despill": DESPILL, "crop": {"mode": crop}, "refine": {"preset": REFINE}}
     (shot / "job.json").write_text(json.dumps(job, indent=2))
     t = time.time()
     r = subprocess.run([sys.executable, "-m", "ck_engine.run", str(shot / "job.json")], cwd=REPO,
@@ -139,8 +140,10 @@ def main():
     ap.add_argument("--crop", default="off", choices=["off", "auto"])
     ap.add_argument("--out", default="hairfur")
     ap.add_argument("--despill", default="everywhere", choices=["everywhere", "edges"])
+    ap.add_argument("--refine", default="off", choices=["off", "hairfur", "solid"])
     args = ap.parse_args()
-    global OUT, DESPILL
+    global OUT, DESPILL, REFINE
+    REFINE = args.refine
     if args.despill == "edges":
         DESPILL = {"amount": 1.0, "mode": "edges"}
     OUT = REPO / "_e2e_out" / args.out

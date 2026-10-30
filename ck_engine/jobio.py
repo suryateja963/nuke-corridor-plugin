@@ -49,6 +49,10 @@ DEFAULT_JOB = {
         "margin": 64,              # pixels added around the auto box before rounding to 128
         "box": None,               # manual: [x, y, w, h] in plate pixels
     },
+    "refine": {
+        "preset": "off",           # off | hairfur | solid (see ck_engine.refine.PRESETS)
+        "grow": 0,                 # pixels: + moves the matte edge out, - in
+    },
     "engine": {"window": "auto", "low_vram": False},
 }
 
@@ -118,6 +122,11 @@ def validate(job: dict) -> None:
         raise JobError("crop.mode manual needs crop.box = [x, y, w, h]")
     if not 0 <= int(c["margin"]) <= 1024:
         raise JobError("crop.margin must be 0-1024 pixels")
+    r = _merge(DEFAULT_JOB["refine"], job.get("refine") or {})
+    if r["preset"] not in ("off", "hairfur", "solid"):
+        raise JobError("refine.preset must be off, hairfur or solid")
+    if not -50 <= int(r["grow"]) <= 50:
+        raise JobError("refine.grow must be -50 to 50 pixels")
     w = job["engine"]["window"]
     if w != "auto" and not (isinstance(w, int) and 1 <= w <= 80):
         raise JobError("engine.window must be 'auto' or a number of frames (1-80)")

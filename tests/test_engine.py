@@ -16,7 +16,7 @@ import numpy as np
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO))
 
-from ck_engine import colour, crop, despill, hints, jobio, prepare, probe  # noqa: E402
+from ck_engine import colour, crop, despill, hints, jobio, prepare, probe, refine  # noqa: E402
 from ck_engine.config import EngineError, find_tool, load_settings  # noqa: E402
 from ck_engine.imageio import read_image, write_exr, write_png16  # noqa: E402
 from ck_engine.run import next_version  # noqa: E402
@@ -327,6 +327,51 @@ class CropTests(unittest.TestCase):
         jobio.validate({**jobio.DEFAULT_JOB, "source": {"path": "a"}, "crop": {"mode": "auto"}})
         with self.assertRaises(jobio.JobError):
             jobio.validate({**jobio.DEFAULT_JOB, "source": {"path": "a"}, "crop": {"mode": "manual"}})
+
+
+class RefineTests(unittest.TestCase):
+    def test_presets_and_overrides(self):
+        self.assertFalse(refine.active(refine.settings({"preset": "off"})))
+        s = refine.settings({"preset": "hairfur", "grow": -2})
+        self.assertTrue(refine.active(s))
+        self.assertEqual((s["temporal_radius"], s["grow"], s["black"]), (1, -2, 0.0))
+        with self.assertRaises(ValueError):
+            refine.settings({"preset": "bogus"})
+
+    def test_clean_specks_and_holes(self):
+        a = np.zeros((64, 64), np.float32)
+        a[10:40, 10:40] = 1.0
+        a[20:23, 20:23] = 0.0          # 9 px hole inside the subject
+        a[55:57, 55:57] = 1.0          # 4 px speck
+        out = refine.clean(a, min_speck=10, min_hole=20)
+        self.assertEqual(float(out[21, 21]), 1.0)
+        self.assertEqual(float(out[55:57, 55:57].sum()), 0.0)
+        self.assertEqual(float(out[0, 0]), 0.0)   # background touching the border stays
+
+    def test_grow_and_levels(self):
+        a = np.zeros((32, 32), np.float32)
+        a[10:20, 10:20] = 1.0
+        self.assertEqual(float(refine.grow(a, 2)[8, 15]), 1.0)
+        self.assertEqual(float(refine.grow(a, -2)[11, 15]), 0.0)
+        np.testing.assert_allclose(refine.levels(np.array([0.02, 0.5, 0.95], np.float32), 0.02, 0.95, 1.0),
+                                   [0.0, 0.516, 1.0], atol=1e-3)
+
+    def test_temporal_steadies_flicker_not_motion(self):
+        with tempfile.TemporaryDirectory() as d:
+            paths = []
+            for i in range(5):
+                a = np.zeros((8, 8), np.float32)
+                a[:, :4] = 0.5 + (0.04 if i % 2 else -0.04)   # flickering soft edge
+                a[:, 6 if i < 2 else 7] = 1.0                    # real motion: big change
+                p = os.path.join(d, f"a.{i:04d}.exr")
+                write_exr(p, np.repeat(a[..., None], 3, 2))
+                paths.append(p)
+            refine.refine_sequence(paths, refine.settings({"preset": "off", "temporal_radius": 1,
+                                                           "temporal_threshold": 0.1}))
+            mid = [read_image(p)[..., 0] for p in paths]
+            self.assertLess(abs(float(mid[2][0, 0]) - 0.5), 0.03)    # flicker damped
+            self.assertGreater(float(mid[3][0, 7]), 0.95)            # moving edge kept
+            self.assertFalse([f for f in os.listdir(d) if "refine" in f])
 
 
 class MiscTests(unittest.TestCase):

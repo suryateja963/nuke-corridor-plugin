@@ -36,6 +36,7 @@ HINT_MODES = [
     ("Matte file, first frame", "first_frame", "file"),
     ("Matte file / sequence, every frame", "sequence", "file"),
 ]
+REFINE = [("hair/fur", "hairfur"), ("off", "off"), ("solid", "solid")]
 WINDOWS = ["auto", "24", "16", "8", "4"]
 NC_MAX_W, NC_MAX_H = 1920, 1080
 
@@ -124,6 +125,9 @@ class KeyPanel(nukescripts.PythonPanel):
         add(nuke.Int_Knob("crop_margin", "margin"), newline=False)
         k["crop_margin"].setValue(64)
         add(nuke.Text_Knob("crop_note", "", "auto: key only the box around the subject (sharper hair/fur)"))
+        add(nuke.Enumeration_Knob("refine", "refine matte", [r[0] for r in REFINE]))
+        add(nuke.Int_Knob("refine_grow", "grow/shrink px"), newline=False)
+        add(nuke.Text_Knob("refine_note", "", "hair/fur: steadier edges, specks removed - solid: firmer edges, holes filled"))
         add(nuke.Enumeration_Knob("window", "window", WINDOWS))
         add(nuke.Boolean_Knob("low_vram", "low VRAM"), newline=False)
         add(nuke.Boolean_Knob("prepare_only", "prepare plate only (then draw a Roto on it)"))
@@ -280,6 +284,7 @@ def key_shot(prepare_only=False):
                      "quality": float(k["hint_quality"].value()), "carry": True},
             "despill": {"amount": float(k["despill"].value()), "screen": k["screen"].value(),
                         "mode": "edges" if k["despill_mode"].value().startswith("edges") else "everywhere"},
+            "refine": {"preset": dict(REFINE)[k["refine"].value()], "grow": int(k["refine_grow"].value())},
             "crop": {"mode": k["crop"].value(), "margin": int(k["crop_margin"].value())},
             "engine": {"window": "auto" if k["window"].value() == "auto" else int(k["window"].value()),
                        "low_vram": bool(k["low_vram"].value())},

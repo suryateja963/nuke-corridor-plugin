@@ -8,12 +8,13 @@ mode "everywhere": `amount` blends every pixel from untouched (0) to fully limit
 mode "edges": per-pixel strength, `amount` is the maximum:
   - transparent edges get it: weight 2 * (1 - alpha), full below alpha 0.5;
   - screen bounce gets it: a pixel whose green excess is small next to its own
-    brightness (ratio = spill / max(r, g, b) below ~0.45) is a neutral or warm
-    colour tinted by the screen, e.g. white fur lit by green;
-  - saturated screen-coloured objects keep their colour (ratio above ~0.6), e.g.
-    green clothing on a green screen.
-  Measured on the hair/fur clips: fur bounce ratio p99 0.43-0.53, green outfit
-  p50 0.78 (docs/quality_hairfur.md).
+    brightness (ratio = spill / max(r, g, b) below 0.5) is a neutral or warm
+    colour tinted by the screen, e.g. white fur lit by green, or shadowed screen
+    the matte held as solid (rabbit leg gap, ratio ~0.46);
+  - saturated screen-coloured objects keep their colour (fading out by 0.65),
+    e.g. green clothing on a green screen.
+  Measured on the hair/fur clips: fur bounce ratio p99 0.43-0.56, green outfit
+  p50 0.78, which keeps 98% of its green (docs/quality_hairfur.md).
 """
 
 from __future__ import annotations
@@ -21,7 +22,7 @@ from __future__ import annotations
 import numpy as np
 
 MODES = ("edges", "everywhere")
-BOUNCE_LO, BOUNCE_HI = 0.45, 0.6
+BOUNCE_LO, BOUNCE_HI = 0.5, 0.65
 
 
 def _smoothstep(lo: float, hi: float, x: np.ndarray) -> np.ndarray:

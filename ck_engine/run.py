@@ -187,6 +187,14 @@ class Runner:
             outputs = self._collect(raw_dir, out, plate.frames)
             if crop:
                 self._paste(out, plate, crop)
+            from . import refine
+            rs = refine.settings(job.get("refine"))
+            if refine.active(rs):
+                self.log(f"refine: {job['refine'].get('preset', 'off')} {rs}")
+                refine.refine_sequence(
+                    [str(out / "alpha" / f"alpha.{f:04d}.exr") for f in plate.frames], rs,
+                    check_cancel=self.check_cancel,
+                    progress=lambda fr: self.progress((0.97, 0.98), fr, "refining matte"))
             d = job["despill"]
             if float(d["amount"]) > 0:
                 outputs["fg_despill"] = self._despill(out, plate.frames, float(d["amount"]), d["screen"],
