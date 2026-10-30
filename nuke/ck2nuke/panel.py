@@ -1,11 +1,17 @@
-"""The Key shot panel: collects settings, renders a Roto hint if asked, writes job.json, starts the run."""
+"""The Key shot panel: collects settings, renders a Roto hint if asked, writes job.json, starts the run.
+
+Nodes are handled by name only (see nc.py: Nuke NC allows Python just 10 Node
+objects per session).
+"""
 
 import json
 import os
 import re
 
 import nuke
+import nukescripts  # PythonPanel lives here, not in nuke
 
+from . import nc
 from . import settings
 from . import runner
 
@@ -35,13 +41,14 @@ NC_MAX_W, NC_MAX_H = 1920, 1080
 
 
 def _selection():
-    """(read, hint_node) from the selection. Uses selectedNodes only (NC-safe)."""
+    """(read_name, hint_name) from the selection, by name."""
     try:
-        nodes = nuke.selectedNodes()
+        names = nc.selected()
     except Exception:
-        nodes = []
-    read = next((n for n in nodes if n.Class() == "Read"), None)
-    hint = next((n for n in nodes if n is not read and n.Class() not in ("Viewer", "BackdropNode")), None)
+        names = []
+    classes = {n: nc.node_class(n) for n in names}
+    read = next((n for n in names if classes[n] == "Read"), None)
+    hint = next((n for n in names if n != read and classes[n] not in ("Viewer", "BackdropNode")), None)
     return read, hint
 
 
@@ -55,11 +62,11 @@ def _guess_shot(path):
     return re.sub(r"[^A-Za-z0-9_-]+", "_", name).strip("_") or "shot", None
 
 
-class KeyPanel(nuke.PythonPanel):
+class KeyPanel(nukescripts.PythonPanel):
     def __init__(self, read, hint_node, prepare_only):
-        nuke.PythonPanel.__init__(self, "CorridorKey 2.0 - Key shot", "uk.co.ck2.keyshot")
+        nukescripts.PythonPanel.__init__(self, "CorridorKey 2.0 - Key shot", "uk.co.ck2.keyshot")
         cfg = settings()
-        self.read = read
+        self.read = read  # Read node name or None
         k = self.k = {}
 
         def add(knob, newline=True):
@@ -117,12 +124,13 @@ class KeyPanel(nuke.PythonPanel):
         k["prepare_only"].setValue(bool(prepare_only))
 
         if read is not None:
-            path = read["file"].value()
-            k["src_info"].setValue("{}  ({}-{}, {}x{})".format(
-                os.path.basename(path), int(read["first"].value()), int(read["last"].value()),
-                read.width(), read.height()))
-            k["first"].setValue(int(read["first"].value()))
-            k["last"].setValue(int(read["last"].value()))
+            path = nc.value(read, "file")
+            first, last = int(float(nc.value(read, "first"))), int(float(nc.value(read, "last")))
+            w, h = nc.size(read)
+            k["src_info"].setValue("{}: {}  ({}-{}, {}x{})".format(
+                read, os.path.basename(path), first, last, w, h))
+            k["first"].setValue(first)
+            k["last"].setValue(last)
             if path.lower().endswith(".exr"):
                 k["colour"].setValue(COLOUR_SPACES[1][0])
             name, root = _guess_shot(path)
@@ -133,7 +141,7 @@ class KeyPanel(nuke.PythonPanel):
             k["src_mode"].setValue("File on disk")
             k["src_info"].setValue("No Read selected. MP4/MOV: pick the file here (NC can't read it).")
         if hint_node is not None:
-            k["hint_node"].setValue(hint_node.name())
+            k["hint_node"].setValue(hint_node)
             k["hint_mode"].setValue(HINT_MODES[1][0])
         self._refresh()
 
@@ -169,48 +177,43 @@ class KeyPanel(nuke.PythonPanel):
 def _source_path(panel):
     k = panel.k
     if k["src_mode"].value() == "Selected Read" and panel.read is not None:
-        raw = panel.read["file"].value()
+        raw = nc.value(panel.read, "file")
         # A path with TCL/Python expressions: hand the engine one evaluated
         # frame; it finds the rest of the sequence from it.
-        return panel.read["file"].evaluate() if "[" in raw else raw
+        return nuke.tcl("filename {}".format(panel.read)) if "[" in raw else raw
     return k["src_file"].value()
 
 
 def _render_hint(node, shot_dir, first, last, mode):
-    """Renders `node` (white = subject) to 16-bit PNGs. NC renders at most
-    1920x1080, so larger plates are scaled down here and back up by the engine."""
+    """Renders node `node` (by name; white = subject) to 16-bit PNGs. NC renders
+    at most 1920x1080, so larger plates are scaled down here and back up by the
+    engine. The Reformat/Write are pasted onto the selected hint node and run
+    through TCL, so no Node objects are used."""
     out_dir = os.path.join(shot_dir, "hint", "nuke_render").replace("\\", "/")
     if not os.path.isdir(out_dir):
         os.makedirs(out_dir)
     for f in os.listdir(out_dir):
         os.remove(os.path.join(out_dir, f))
-    created = []
+    w, h = nc.size(node)
+    ref_name, write_name = nc.unique("CK2_hintReformat"), nc.unique("CK2_hintWrite")
+    pattern = out_dir + "/hint.####.png"
+    nk = ""
+    if w > NC_MAX_W or h > NC_MAX_H:
+        scale = min(float(NC_MAX_W) / w, float(NC_MAX_H) / h)
+        nk += "Reformat {{\n type scale\n scale {:.6f}\n filter Cubic\n name {}\n}}\n".format(scale, ref_name)
+    nk += ("Write {{\n file {}\n file_type png\n datatype \"16 bit\"\n channels rgba\n"
+           " name {}\n}}\n").format(nc.q(pattern), write_name)
+    nc.deselect_all()
+    nc.select(node)
     try:
-        src = node
-        w, h = node.width(), node.height()
-        if w > NC_MAX_W or h > NC_MAX_H:
-            scale = min(float(NC_MAX_W) / w, float(NC_MAX_H) / h)
-            ref = nuke.nodes.Reformat(inputs=[node])
-            ref["type"].setValue("scale")
-            ref["scale"].setValue(scale)
-            ref["filter"].setValue("Cubic")
-            created.append(ref)
-            src = ref
-        write = nuke.nodes.Write(inputs=[src])
-        created.append(write)
-        pattern = out_dir + "/hint.####.png"
-        write["file"].setValue(pattern)
-        write["file_type"].setValue("png")
-        write["datatype"].setValue("16 bit")
-        write["channels"].setValue("rgba")
-        if mode == "first_frame":
-            nuke.execute(write, first, first)
-        else:
-            nuke.execute(write, first, last)
-        return pattern
+        nc.paste(nk)
+        if not nc.exists(write_name):
+            raise RuntimeError("could not create the hint Write node")
+        nc.execute(write_name, first, first if mode == "first_frame" else last)
     finally:
-        for n in created:
-            nuke.delete(n)
+        nc.delete(write_name)
+        nc.delete(ref_name)
+    return pattern
 
 
 def key_shot(prepare_only=False):
@@ -244,9 +247,9 @@ def key_shot(prepare_only=False):
         hint_path = None
         stage = "prepare" if k["prepare_only"].value() else "all"
         if stage == "all" and src_kind == "node":
-            node = nuke.toNode(k["hint_node"].value())
-            if node is None:
-                raise ValueError("Hint node '{}' not found.".format(k["hint_node"].value()))
+            node = k["hint_node"].value()
+            if not nc.exists(node):
+                raise ValueError("Hint node '{}' not found.".format(node))
             if not use_range:
                 raise ValueError("Set the frame range (first/last) to render the hint over.")
             r_last = last if not preview else min(last, first + preview - 1)

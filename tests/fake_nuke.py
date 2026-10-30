@@ -1,8 +1,14 @@
-"""A small stand-in for Nuke's `nuke` module, enough to run ck2nuke's logic
-outside Nuke. It records what the tool does; it says nothing about whether real
-Nuke (NC) allows it - that is Gate G2's job."""
+"""A small stand-in for Nuke's `nuke` and `nukescripts` modules, enough to run
+ck2nuke's logic outside Nuke. It records what the tool does; it says nothing
+about whether real Nuke (NC) allows it. tests\run_nuke_auto.ps1 tests that in
+real Nuke.
 
-import os
+Emulates the name-based API the tool uses because of NC's 10-Node-object limit:
+nuke.exists, nuke.expression("X.width"), a few TCL commands, and nuke.nodePaste
+of .nk text (stack rule: the node on top of the stack becomes input 0).
+"""
+
+import re
 import sys
 import types
 
@@ -14,9 +20,10 @@ deleted = []
 executed = []
 _formats = []
 _by_name = {}
-selected = []
+selected = []          # node names
 panel_ok = True
-panel_hook = None  # fn(panel) called before showModalDialog returns
+panel_hook = None      # fn(panel) called before showModalDialog returns
+root_settings = {"colorManagement": "Nuke", "OCIO_config": "nuke-default", "fps": 24.0}
 
 
 class Knob:
@@ -39,12 +46,6 @@ class Knob:
 
     def values(self):
         return self._values
-
-    def evaluate(self):
-        return self._value
-
-    def fromUserText(self, text):
-        self._value = text.rsplit(" ", 1)[0]
 
     def setVisible(self, v):
         self.visible = v
@@ -87,26 +88,21 @@ class Text_Knob(Knob):
 class Node:
     def __init__(self, cls, inputs=None, **kw):
         self._cls = cls
-        self.inputs = inputs or []
+        self.inputs = list(inputs or [])
         self.knobs = {}
         self.w, self.h = kw.pop("_size", (1920, 1080))
         for k, v in kw.items():
             self[k].setValue(v)
-        if cls == "Read":
-            self["colorspace"]._values = ["default", "Utility/linear", "sRGB"]
         if "name" not in kw:
             n = 1
             while f"{cls}{n}" in _by_name:
                 n += 1
             self["name"].setValue(f"{cls}{n}")
-        _by_name[self["name"].value()] = self
+        _by_name[self.name()] = self
         created.append(self)
 
     def __getitem__(self, k):
         return self.knobs.setdefault(k, Knob(k))
-
-    def knob(self, k):
-        return self[k]
 
     def name(self):
         return self["name"].value()
@@ -120,15 +116,6 @@ class Node:
     def height(self):
         return self.h
 
-    def setXYpos(self, x, y):
-        self.xy = (x, y)
-
-    def xpos(self):
-        return getattr(self, "xy", (0, 0))[0]
-
-    def ypos(self):
-        return getattr(self, "xy", (0, 0))[1]
-
 
 class _Nodes:
     def __getattr__(self, cls):
@@ -138,6 +125,7 @@ class _Nodes:
 nodes = _Nodes()
 
 
+# Real Nuke has no nuke.PythonPanel; it is nukescripts.PythonPanel (see install).
 class PythonPanel:
     def __init__(self, title="", id=""):
         self._knobs = []
@@ -156,7 +144,6 @@ class ProgressTask:
 
     def __init__(self, title):
         ProgressTask.log.append(("title", title))
-        self.cancel_after = None
 
     def isCancelled(self):
         return False
@@ -168,22 +155,6 @@ class ProgressTask:
         ProgressTask.log.append(("message", m))
 
 
-class _Format:
-    def __init__(self, spec):
-        self._name = spec.split()[-1]
-
-    def name(self):
-        return self._name
-
-
-def addFormat(spec):
-    _formats.append(_Format(spec))
-
-
-def formats():
-    return list(_formats)
-
-
 def message(m):
     messages.append(m)
 
@@ -193,30 +164,141 @@ def ask(m):
     return True
 
 
-def toNode(name):
-    return _by_name.get(name)
+def exists(name):
+    return name in _by_name
 
 
-def selectedNodes():
-    return list(selected)
+def expression(expr):
+    name, attr = expr.split(".")
+    n = _by_name[name]
+    return float(n.w if attr == "width" else n.h)
 
 
-def delete(n):
-    deleted.append(n)
-    _by_name.pop(n.name(), None)
+def _input_name(name, i):
+    n = _by_name[name]
+    return n.inputs[i].name() if i < len(n.inputs) and n.inputs[i] else ""
+
+
+def tcl(cmd):
+    cmd = cmd.strip()
+    m = re.fullmatch(r"value \[input (\S+) (\d+)\]\.name", cmd)
+    if m:
+        return _input_name(m.group(1), int(m.group(2)))
+    if cmd == "selected_nodes":
+        if not selected:
+            raise RuntimeError("No nodes selected")  # what real Nuke's TCL does
+        return " ".join(selected)
+    m = re.fullmatch(r"value (\S+?)\.(\w+)", cmd)
+    if m:
+        name, k = m.groups()
+        if k == "name":
+            return name
+        return str(_by_name[name][k].value())
+    m = re.fullmatch(r"class (\S+)", cmd)
+    if m:
+        return _by_name[m.group(1)].Class()
+    m = re.fullmatch(r"knob (\S+?)\.selected (true|false)", cmd)
+    if m:
+        name, on = m.groups()
+        if on == "true" and name not in selected:
+            selected.append(name)
+        if on == "false" and name in selected:
+            selected.remove(name)
+        return ""
+    m = re.fullmatch(r"delete (\S+)", cmd)
+    if m:
+        n = _by_name.pop(m.group(1))
+        deleted.append(n)
+        if n.name() in selected:
+            selected.remove(n.name())
+        return ""
+    m = re.fullmatch(r"execute (\S+) (-?\d+)-(-?\d+)", cmd)
+    if m:
+        execute(_by_name[m.group(1)], int(m.group(2)), int(m.group(3)))
+        return ""
+    m = re.fullmatch(r"filename (\S+)", cmd)
+    if m:
+        return str(_by_name[m.group(1)]["file"].value())
+    raise NotImplementedError("fake tcl: " + cmd)
+
+
+def _unquote(v):
+    v = v.strip()
+    if v.startswith('"') and v.endswith('"'):
+        v = v[1:-1]
+        v = re.sub(r"\\(.)", lambda m: "\n" if m.group(1) == "n" else m.group(1), v)
+    return v
+
+
+def nodePaste(path):
+    """Parses the .nk subset the tool writes; connects an open first input to the
+    selected node, like Nuke's paste."""
+    with open(path, encoding="utf-8") as f:
+        text = f.read()
+    stack, vars_ = [], {}
+    first_node = True
+    pos = 0
+    block = re.compile(r"(\w+) \{\n(.*?)\n\}\n", re.S)
+    lines = text.split("\n")
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        if not line.strip():
+            i += 1
+            continue
+        m = re.fullmatch(r"set (\w+) \[stack 0\]", line)
+        if m:
+            vars_[m.group(1)] = stack[-1]
+            i += 1
+            continue
+        m = re.fullmatch(r"push \$(\w+)", line)
+        if m:
+            stack.append(vars_[m.group(1)])
+            i += 1
+            continue
+        m = re.fullmatch(r"(\w+) \{", line)
+        if not m:
+            raise ValueError("fake nodePaste can't parse: " + line)
+        cls = m.group(1)
+        knobs = {}
+        i += 1
+        while lines[i] != "}":
+            k, _, v = lines[i].strip().partition(" ")
+            knobs[k] = _unquote(v)
+            i += 1
+        i += 1
+        n_inputs = int(knobs.pop("inputs", "1"))
+        if cls == "BackdropNode":
+            n_inputs = 0
+        inputs = []
+        if n_inputs and not stack and first_node and selected:
+            inputs = [_by_name[selected[0]]]
+        else:
+            for _ in range(n_inputs):
+                inputs.append(stack.pop() if stack else None)
+        node = Node(cls, inputs)
+        _by_name.pop(node.name())
+        for k, v in knobs.items():
+            node[k].setValue(v)
+        _by_name[node.name()] = node
+        if cls != "BackdropNode":
+            stack.append(node)
+        first_node = False
+    return None
 
 
 def execute(node, first, last, incr=1):
     """Write nodes: render a white square mask (alpha) as 16-bit PNG per frame."""
-    executed.append((node.name(), first, last))
     import numpy as np
     import cv2
-    pattern = node["file"].value()
+    executed.append((node.name(), first, last))
     src = node.inputs[0]
-    w, h = src.width(), src.height()
-    scale = float(src["scale"].value()) if src.Class() == "Reformat" else 1.0
     if src.Class() == "Reformat":
+        scale = float(src["scale"].value())
         w, h = round(src.inputs[0].width() * scale), round(src.inputs[0].height() * scale)
+    else:
+        w, h = src.width(), src.height()
+    pattern = node["file"].value()
     for f in range(first, last + 1):
         img = np.zeros((h, w, 4), np.uint16)
         img[h // 4: 3 * h // 4, w // 4: 3 * w // 4] = 65535
@@ -227,14 +309,10 @@ def executeInMainThread(fn, args=(), kwargs=None):
     fn(*args, **(kwargs or {}))
 
 
-def connectViewer(i, n):
-    pass
-
-
 class _Root:
     def __getitem__(self, k):
         kn = Knob(k)
-        kn.setValue(24.0)
+        kn.setValue(root_settings.get(k, ""))
         return kn
 
 
@@ -248,3 +326,6 @@ def getFilename(msg, *a, **kw):
 
 def install():
     sys.modules["nuke"] = sys.modules[__name__]
+    mod = types.ModuleType("nukescripts")
+    mod.PythonPanel = PythonPanel
+    sys.modules["nukescripts"] = mod

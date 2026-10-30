@@ -13,7 +13,27 @@ Fill this in as you run the Gate. Paste the G2 report back to Claude as well.
 | Licence shown | Non-commercial |
 | CorridorKey hook | `%USERPROFILE%\.nuke\init.py` → `nuke.pluginAddPath(r"D:/nuke plugin/nuke")` |
 
+## Findings in real Nuke 17.1v2 Non-commercial (2026-10-30)
+
+Measured by the automatic in-Nuke tests (`tests\run_nuke_auto.ps1`, probes in `nuke\tests\`).
+
+| Finding | Evidence | What the tool does |
+|---|---|---|
+| **Python gets at most 10 Node objects per session, ever.** The 11th `nuke.nodes.X()` / `toNode()` returns None and stderr says *"The Non-Commercial mode 10-node limit for Node objects accessible in Python has been reached"*. Dropping references or deleting nodes doesn't free any. After the limit, `selectedNodes()` returns `[]` | `nc_limit_probe.py` | Never holds Node objects (`ck2nuke/nc.py`) |
+| `nuke.nodePaste(file.nk)` creates nodes **without** using the budget, and a pasted node with an open input connects to the selected node | `nc_limit_probe.py`, `nc_limit_probe2.py` | The comp and the hint Write/Reformat are pasted `.nk` text |
+| TCL works by name after the limit: `value X.knob`, `knob X.selected true`, `class X`, `delete X`, `execute X 1-1`, `value [input X 0].name`; `nuke.exists()` and `nuke.expression("X.width")` too | `nc_limit_probe2.py` | All node access is by name |
+| TCL `selected_nodes` returns internal ids, and **raises "No nodes selected"** when the selection is empty | auto test | `nc.selected()` resolves ids to names; treats the error as empty |
+| `nuke.PythonPanel` doesn't exist; it's **`nukescripts.PythonPanel`** | auto test | Panels subclass `nukescripts.PythonPanel` |
+| `nuke.sample()` takes at most 6 arguments (no frame); it samples the current frame | load probe | Tests call `nuke.frame(f)` first |
+| In `.nk` text the node on **top of the stack becomes input 0** (push A first, then B) | load probe: Copy B=fg, A=alpha; Merge B=bg, A=premult | `loader.comp_nk` |
+| Default colour management is `Nuke` / `nuke-default`, where linear Rec.709 is called `linear` | probe | `nc.linear_colorspace()` picks `linear`, else `Linear Rec.709 (sRGB)` |
+| subprocess, background threads, `nuke.ProgressTask` from a thread, `executeInMainThread`, 16-bit PNG renders (HD; 4K Roto scaled to 1920×1080) all work | auto test | as designed |
+| Engine launched from Nuke sees the GPU once `PYTHONPATH`/`PYTHONHOME` are stripped | auto test: `CUDA True NVIDIA GeForce RTX 5060 Laptop GPU` | `runner._clean_env()` |
+
 ## G2 — Capability test
+
+The automatic test (`tests\run_nuke_auto.ps1`) now covers everything below and more; the manual
+G2 script stays as a quick check you can run by hand.
 
 ### How to run
 

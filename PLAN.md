@@ -9,16 +9,16 @@
 ## 0. Status (2026-10-30)
 
 The code for every phase is written (you asked to build it all at once, ahead of the Gate).
-The engine side is tested on this machine; **nothing has run inside real Nuke yet.**
+Engine tested on this machine; **Nuke tool tested inside real Nuke 17.1v2 NC** (automatic test, 12/12 pass).
 
 | Phase | Code | Verified | Still needs you |
 |---|---|---|---|
-| G1/G2 Nuke version, capability test | `nuke/tests/g2_capability_test.py` | engine side only | Install Nuke NC, run G2, fill in `docs/nuke_env.md` |
+| G1/G2 Nuke version, capability test | `nuke/tests/g2_capability_test.py`, `tests/run_nuke_auto.ps1` | Nuke 17.1v2 NC installed; automatic in-Nuke test 12/12 (see `docs/nuke_env.md` findings) | Release date from Help → About (expiry) |
 | G3 real-footage check | — | 4K `pail.mp4` keyed cleanly (6 + 12 frames) | Your own footage, especially hair and log clips |
 | G4 worker protocol | `docs/worker_api.md` | read from the code | — |
 | 1 Colour prep | `ck_engine/probe.py`, `colour.py`, `prepare.py` | Unit tests: curve maths, matrices, exact limited/full decode (zscale), plate reuse. Real footage: sRGB MP4 only | Grey-card check per camera (S-Log3, V-Log, Apple Log, HLG untested); task 1.5 clamp vs keep |
 | 2 Job runner | `ck_engine/run.py`, `hints.py`, `despill.py`, `jobio.py`, `run_job.bat`, `run_queue.bat` | GPU end-to-end: preview, versions, first-frame hint, despill, cancel, cleanup | Run a matte-sequence hint on real footage |
-| 3 Nuke tool | `nuke/menu.py`, `nuke/ck2nuke/*`, `install_nuke_hook.py` | Logic tested against a stand-in `nuke` module, including a real engine run | **Everything inside real Nuke** |
+| 3 Nuke tool | `nuke/menu.py`, `nuke/ck2nuke/*`, `install_nuke_hook.py` | In real Nuke: menu, panel, Roto hint render (HD/4K), MP4 key and plate+Roto key through the panel, comp loaded and rendered | Use it by hand on your own shots |
 | 4 Hardening | failure messages, `docs/troubleshooting.md`, `docs/upgrade_checklist.md` | cancel, missing-input and bad-hint cases in tests | Test matrix on your footage (`docs/test_matrix.md`) |
 
 Changes from this plan, decided while building:
@@ -27,6 +27,7 @@ Changes from this plan, decided while building:
   space. This avoids changing the shared CorridorKey venv.
 - **Decoding uses zscale, not swscale.** swscale was about 0.4 % off at the range ends.
 - **Cutout output dropped** (the worker doesn't produce it). `fg_despill` is written instead.
+- **No Node objects in the Nuke tool.** Nuke NC allows Python only 10 per session; nodes are made by pasting `.nk` text and handled by name via TCL (`ck2nuke/nc.py`).
 - **"Prepare plate only"** is a mode of its own, so MP4 sources (which NC can't read) get a plate in
   Nuke to Roto on before keying.
 

@@ -1,6 +1,9 @@
 """Loads engine results into the script: Reads (linear) plus a comp in a Backdrop.
 
 Comp: fg (straight colour) + alpha copied in -> Premult -> Merge over a background.
+Built as .nk text and pasted (nc.paste), so it uses none of Nuke NC's 10 Python
+Node objects. In .nk text the node on top of the stack becomes input 0, so for
+Copy/Merge input 1 (A) is pushed first, then input 0 (B).
 """
 
 import json
@@ -9,119 +12,97 @@ import time
 
 import nuke
 
-# Colourspace names that mean "linear Rec.709" across Nuke's default and ACES/OCIO configs.
-_LINEAR_NAMES = ("linear", "scene_linear", "linear rec.709 (srgb)", "lin_rec709",
-                 "utility - linear - srgb", "lin_srgb")
+from . import nc
 
-
-def _set_linear(read):
-    knob = read.knob("colorspace")
-    if knob is None:
-        return False
-    try:
-        values = knob.values()
-    except Exception:
-        values = []
-    for want in _LINEAR_NAMES:
-        for v in values:
-            name = v.split("/")[-1].split("\t")[0].strip().lower()
-            if name == want:
-                knob.setValue(v)
-                return True
-    try:
-        knob.setValue("linear")
-        return True
-    except Exception:
-        return False
-
-
-def _read(pattern, first, last, name, x, y):
-    r = nuke.nodes.Read(name=name)
-    r["file"].fromUserText("{} {}-{}".format(pattern.replace("\\", "/"), first, last))
-    for knob, val in (("first", first), ("last", last), ("origfirst", first), ("origlast", last)):
-        r[knob].setValue(int(val))
-    r["on_error"].setValue("black")
-    _set_linear(r)
-    r.setXYpos(x, y)
-    return r
-
-
-def _unique(base):
-    name, i = base, 1
-    while nuke.toNode(name) is not None:
-        i += 1
-        name = "{}{}".format(base, i)
-    return name
+DX, DY = 130, 110
 
 
 def _origin():
     try:
-        sel = nuke.selectedNodes()
+        sel = nc.selected()
     except Exception:
         sel = []
     if sel:
-        return sel[0].xpos() + 300, sel[0].ypos()
+        x, y = nc.pos(sel[0])
+        return x + 300, y
     return 0, 0
+
+
+def _fmt(p):
+    return '"{w} {h} 0 0 {w} {h} 1 CK2_{w}x{h}"'.format(w=p["width"], h=p["height"])
+
+
+def _read_nk(pattern, p, name, x, y, cs):
+    first, last = p["first"], p["last"]
+    return ("Read {{\n inputs 0\n file_type exr\n file {file}\n format {fmt}\n"
+            " first {f}\n last {l}\n origfirst {f}\n origlast {l}\n origset true\n"
+            " colorspace {cs}\n on_error black\n name {name}\n xpos {x}\n ypos {y}\n}}\n").format(
+        file=nc.q(pattern), fmt=_fmt(p), f=first, l=last, cs=nc.q(cs), name=name, x=x, y=y)
 
 
 def load_plate(status):
     p = status["plate"]
     x, y = _origin()
     shot = os.path.basename(status.get("shot_dir", "shot").rstrip("/\\"))
-    r = _read(p["pattern"], p["first"], p["last"], _unique("CK2_{}_plate".format(shot)), x, y)
+    name = nc.unique("CK2_{}_plate".format(shot))
+    nc.deselect_all()
+    nc.paste(_read_nk(p["pattern"], p, name, x, y, nc.linear_colorspace()))
     nuke.message("CorridorKey 2.0: plate ready ({}x{}, {:.3f} fps).\n\nDraw a Roto on {} if you "
                  "want a hint, select the plate and the Roto, then Key shot.".format(
-                     p["width"], p["height"], p["fps"], r.name()))
-    return r
+                     p["width"], p["height"], p["fps"], name))
+    return name
+
+
+def comp_nk(status, names, x0, y0, cs):
+    """The .nk text for plate, fg, alpha, Copy, Premult, BG, Merge and a Backdrop."""
+    p, out = status["plate"], status["outputs"]
+    fg_pattern = out.get("fg_despill") or out["fg"]
+    label = "<b>{}</b>\\n{} - {}x{} - {:.3f} fps - frames {}-{}\\n{}".format(
+        names["tag"], time.strftime("%Y-%m-%d %H:%M"), p["width"], p["height"], p["fps"],
+        p["first"], p["last"], "despilled fg" if out.get("fg_despill") else "fg (no despill)")
+    nk = ("BackdropNode {{\n inputs 0\n name {bd}\n label \"{label}\"\n note_font_size 14\n"
+          " tile_color 0x3d5a45ff\n xpos {bx}\n ypos {by}\n bdwidth {bw}\n bdheight {bh}\n}}\n").format(
+        bd=names["backdrop"], label=label, bx=x0 - DX - 40, by=y0 - 90, bw=4 * DX + 120, bh=3 * DY + 180)
+    nk += _read_nk(p["pattern"], p, names["plate"], x0, y0, cs)
+    nk += _read_nk(out["alpha"], p, names["alpha"], x0 + 2 * DX, y0, cs)
+    nk += "set N_alpha [stack 0]\n"
+    nk += _read_nk(fg_pattern, p, names["fg"], x0 + DX, y0, cs)
+    nk += "set N_fg [stack 0]\n"
+    # Copy: input 0 (B) = fg, input 1 (A) = alpha. The alpha EXR is single-channel,
+    # which Nuke reads into red.
+    nk += "push $N_alpha\npush $N_fg\n"
+    nk += ("Copy {{\n inputs 2\n from0 rgba.red\n to0 rgba.alpha\n name {}\n xpos {}\n ypos {}\n}}\n"
+           "Premult {{\n name {}\n xpos {}\n ypos {}\n}}\nset N_premult [stack 0]\n").format(
+        names["copy"], x0 + DX, y0 + DY, names["premult"], x0 + DX, y0 + 2 * DY)
+    nk += ("Constant {{\n inputs 0\n channels rgb\n color {{0.18 0.18 0.18 1}}\n format {fmt}\n"
+           " name {bg}\n xpos {x}\n ypos {y}\n}}\nset N_bg [stack 0]\n").format(
+        fmt=_fmt(p), bg=names["bg"], x=x0 - DX, y=y0 + 2 * DY)
+    # Merge: input 0 (B) = background, input 1 (A) = premultiplied subject.
+    nk += "push $N_premult\npush $N_bg\n"
+    nk += "Merge2 {{\n inputs 2\n operation over\n name {}\n xpos {}\n ypos {}\n}}\n".format(
+        names["over"], x0 + DX, y0 + 3 * DY)
+    return nk
 
 
 def load_result(status):
     if status.get("stage") == "prepare" or "outputs" not in status:
         return load_plate(status)
-    p, out = status["plate"], status["outputs"]
     shot = os.path.basename(status.get("shot_dir", "shot").rstrip("/\\"))
     tag = "CK2_{}_{}".format(shot, status.get("version", "key"))
+    names = {"tag": tag}
+    for part in ("backdrop", "plate", "fg", "alpha", "copy", "premult", "bg", "over"):
+        names[part] = nc.unique("{}_{}".format(tag, part))
     x0, y0 = _origin()
-    first, last = p["first"], p["last"]
-    dx, dy = 130, 110
-
-    plate = _read(p["pattern"], first, last, _unique(tag + "_plate"), x0, y0)
-    fg_pattern = out.get("fg_despill") or out["fg"]
-    fg = _read(fg_pattern, first, last, _unique(tag + "_fg"), x0 + dx, y0)
-    alpha = _read(out["alpha"], first, last, _unique(tag + "_alpha"), x0 + 2 * dx, y0)
-
-    # The alpha EXR is single-channel; Nuke shows it in red (and rgb).
-    copy = nuke.nodes.Copy(inputs=[fg, alpha], from0="rgba.red", to0="rgba.alpha",
-                           name=_unique(tag + "_copyAlpha"))
-    copy.setXYpos(x0 + dx, y0 + dy)
-    premult = nuke.nodes.Premult(inputs=[copy], name=_unique(tag + "_premult"))
-    premult.setXYpos(x0 + dx, y0 + 2 * dy)
-
-    fmt_name = "CK2_{}x{}".format(p["width"], p["height"])
-    if not any(f.name() == fmt_name for f in nuke.formats()):
-        nuke.addFormat("{} {} 1.0 {}".format(p["width"], p["height"], fmt_name))
-    bg = nuke.nodes.Constant(name=_unique(tag + "_BG"))
-    bg["format"].setValue(fmt_name)
-    bg["color"].setValue([0.18, 0.18, 0.18, 1.0])
-    bg.setXYpos(x0 - dx, y0 + 2 * dy)
-    merge = nuke.nodes.Merge2(inputs=[bg, premult], operation="over", name=_unique(tag + "_over"))
-    merge.setXYpos(x0 + dx, y0 + 3 * dy)
-
-    label = "<b>{}</b>\n{} - {}x{} - {:.3f} fps - frames {}-{}\n{}".format(
-        tag, time.strftime("%Y-%m-%d %H:%M"), p["width"], p["height"], p["fps"], first, last,
-        "despilled fg" if out.get("fg_despill") else "fg (no despill)")
-    bd = nuke.nodes.BackdropNode(xpos=x0 - dx - 40, ypos=y0 - 90,
-                                 bdwidth=4 * dx + 120, bdheight=3 * dy + 180,
-                                 label=label, note_font_size=14, tile_color=0x3D5A45FF)
-    bd["name"].setValue(_unique(tag + "_backdrop"))
+    nc.deselect_all()
+    nc.paste(comp_nk(status, names, x0, y0, nc.linear_colorspace()))
+    p = status["plate"]
     try:
-        nuke.connectViewer(0, merge)
+        fps = nuke.root()["fps"].value()
+        if abs(fps - p["fps"]) > 0.001:
+            print("[CorridorKey 2.0] note: script fps {} differs from the shot's {:.3f}".format(fps, p["fps"]))
     except Exception:
         pass
-    if abs(nuke.root()["fps"].value() - p["fps"]) > 0.001:
-        print("[CorridorKey 2.0] note: script fps {} differs from the shot's {:.3f}".format(
-            nuke.root()["fps"].value(), p["fps"]))
-    return merge
+    return names["over"]
 
 
 def load_from_folder():

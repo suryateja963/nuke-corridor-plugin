@@ -4,7 +4,7 @@ Fill in as you test. Mark ✅ pass, ❌ fail (+ note), — not applicable / no f
 
 | Source | Res | No hint | Roto first frame | Roto every frame | Matte file | s/frame | Window (Auto VRAM line) | Notes |
 |---|---|---|---|---|---|---|---|---|
-| pail.mp4 (sRGB H.264) | 4K | ✅ (engine, 2026-10-30) | ✅ (engine, alpha as hint) | | | ~4.5 | chunk 4, low VRAM | Not yet run from Nuke |
+| pail.mp4 (sRGB H.264) | 4K | ✅ engine + ✅ Nuke panel | ✅ Nuke Roto (box; use quality ~0.75 for rough boxes) | | | ~4.5 | chunk 4, low VRAM | Keyed from real Nuke 17.1v2 NC 2026-10-30 |
 | Phone SDR MP4 | HD | | | | | | | |
 | Phone HDR (HLG) | | | | | | | | |
 | Sony S-Log3 | | | | | | | | |

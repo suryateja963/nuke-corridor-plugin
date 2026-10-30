@@ -100,6 +100,8 @@ def _finish(status, job_path):
         try:
             loader.load_result(status)
         except Exception as exc:
+            import traceback
+            traceback.print_exc()
             nuke.message("CorridorKey 2.0: key finished, but loading it failed:\n{}".format(exc))
         warnings = status.get("warnings") or []
         if warnings:

@@ -18,3 +18,4 @@ nuke software/
 
 # test output
 _e2e_out/
+_nuke_test/

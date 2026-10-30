@@ -21,6 +21,7 @@ import time
 import traceback
 
 import nuke
+import nukescripts
 
 ENGINE_PY = r"D:\CorridorKey2\venv\Scripts\python.exe"
 OUT_DIR = r"D:\nuke plugin\_g2_out"
@@ -92,9 +93,9 @@ def check_panel():
     return "show() returned {}, colour space={!r}".format(result, p.value("Colour space"))
 
 
-class _TestPythonPanel(nuke.PythonPanel):
+class _TestPythonPanel(nukescripts.PythonPanel):
     def __init__(self):
-        nuke.PythonPanel.__init__(self, "G2: PythonPanel test")
+        nukescripts.PythonPanel.__init__(self, "G2: PythonPanel test")
         self.colour = nuke.Enumeration_Knob(
             "colour", "Colour space", ["sRGB / Rec.709", "Linear Rec.709", "S-Log3"])
         self.matte = nuke.File_Knob("matte", "Matte file")
@@ -278,7 +279,7 @@ def main():
             ("Menu item", check_menu),
             ("nuke.getFilename", check_get_filename),
             ("nuke.Panel", check_panel),
-            ("nuke.PythonPanel (knob panel)", check_python_panel),
+            ("nukescripts.PythonPanel (knob panel)", check_python_panel),
             ("subprocess: cmd /c echo", check_subprocess_echo),
             ("subprocess: engine venv python + GPU", check_engine_python),
             ("Render Roto -> Write 16-bit PNG 1920x1080", check_roto_render)):

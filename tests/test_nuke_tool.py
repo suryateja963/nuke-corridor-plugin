@@ -3,8 +3,8 @@
     D:\\CorridorKey2\\venv\\Scripts\\python.exe -m unittest tests.test_nuke_tool -v
 
 Covers: panel -> job.json, hint render path for a 4K plate (NC 1920x1080 limit),
-runner following a real engine run (plate prepare, CPU), loader building the comp.
-Does NOT prove Nuke NC allows any of it: that is Gate G2.
+runner following a real engine run (plate prepare, CPU), loader's pasted comp.
+Real-Nuke behaviour is tested by tests\run_nuke_auto.ps1.
 """
 
 import json
@@ -34,20 +34,23 @@ def set_panel(**values):
     fake_nuke.panel_hook = hook
 
 
+def reset():
+    fake_nuke.messages.clear()
+    fake_nuke.selected.clear()
+    fake_nuke._by_name.clear()
+    fake_nuke.panel_hook = None
+
+
 class NukeToolTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.root = Path(self.tmp.name)
-        fake_nuke.messages.clear()
-        fake_nuke.selected.clear()
-        fake_nuke.panel_hook = None
+        reset()
         self.started = []
         self._orig_start = runner.start
-        runner.start = lambda job_path, title="": self.started.append(job_path)
-        panel.runner.start = runner.start
+        panel.runner.start = lambda job_path, title="": self.started.append(job_path)
 
     def tearDown(self):
-        runner.start = self._orig_start
         panel.runner.start = self._orig_start
         self.tmp.cleanup()
 
@@ -73,12 +76,12 @@ class NukeToolTests(unittest.TestCase):
 
     def test_read_with_roto_hint_on_4k_plate(self):
         shot = self.root / "shots" / "s010"
-        read = fake_nuke.Node("Read", _size=(3840, 2160))
+        read = fake_nuke.Node("Read", _size=(3840, 2160), name="Read1")
         read["file"].setValue((shot / "plate_lin" / "plate.####.exr").as_posix())
         read["first"].setValue(1001)
         read["last"].setValue(1010)
-        roto = fake_nuke.Node("Roto", _size=(3840, 2160))
-        fake_nuke.selected.extend([read, roto])
+        fake_nuke.Node("Roto", _size=(3840, 2160), name="Roto1")
+        fake_nuke.selected.extend(["Read1", "Roto1"])
         set_panel()
         panel.key_shot()
         job = self._job()
@@ -86,11 +89,11 @@ class NukeToolTests(unittest.TestCase):
         self.assertEqual(job["colour"]["space"], "linear_rec709")
         self.assertEqual((job["frames"]["first"], job["frames"]["last"]), (1001, 1010))
         self.assertEqual(job["hint"]["mode"], "first_frame")
-        self.assertTrue(os.path.isfile(job["hint"]["path"].replace("####", "1001")))
         import cv2
         img = cv2.imread(job["hint"]["path"].replace("####", "1001"), cv2.IMREAD_UNCHANGED)
         self.assertEqual(img.shape[:2], (1080, 1920))   # scaled down for the NC render limit
-        self.assertTrue(any(n.Class() == "Reformat" for n in fake_nuke.deleted))
+        self.assertFalse(fake_nuke.exists("CK2_hintWrite"))  # temp nodes removed
+        self.assertFalse(fake_nuke.exists("CK2_hintReformat"))
 
     def test_missing_source_message(self):
         set_panel(shot_root=str(self.root))
@@ -100,28 +103,26 @@ class NukeToolTests(unittest.TestCase):
 
 
 class RunnerLoaderTests(unittest.TestCase):
-    """Runner + loader against a real engine run (stage 'prepare', CPU only)."""
+    def setUp(self):
+        reset()
 
     def test_prepare_round_trip(self):
+        """Runner + loader against a real engine run (stage 'prepare', CPU only)."""
         with tempfile.TemporaryDirectory() as d:
             video = os.path.join(d, "tiny.mkv")
             _make_video(video, w=64, h=36, frames=4)
             shot = Path(d) / "shot"
             shot.mkdir()
-            job = {"schema_version": 1, "stage": "prepare", "shot_dir": shot.as_posix(),
-                   "source": {"path": video}}
             jp = shot / "job.json"
-            jp.write_text(json.dumps(job))
-            fake_nuke.messages.clear()
+            jp.write_text(json.dumps({"schema_version": 1, "stage": "prepare",
+                                      "shot_dir": shot.as_posix(), "source": {"path": video}}))
             fake_nuke.ProgressTask.log.clear()
-            proc = runner._spawn(jp.as_posix())
-            status = runner._follow(proc, jp.as_posix(), "test")
+            status = runner._follow(runner._spawn(jp.as_posix()), jp.as_posix(), "test")
             self.assertEqual(status["state"], "done", status)
             self.assertTrue(any(k == "progress" for k, _ in fake_nuke.ProgressTask.log))
             runner._finish(status, jp.as_posix())
-            reads = [n for n in fake_nuke.created if n.Class() == "Read" and "plate" in n.name()]
-            self.assertTrue(reads)
-            self.assertEqual(reads[-1]["colorspace"].value(), "Utility/linear")
+            self.assertTrue(fake_nuke.exists("CK2_shot_plate"))
+            self.assertEqual(fake_nuke.tcl("value CK2_shot_plate.colorspace"), "linear")
             self.assertIn("plate ready", fake_nuke.messages[-1])
 
     def test_loader_builds_comp(self):
@@ -132,15 +133,16 @@ class RunnerLoaderTests(unittest.TestCase):
                               "fg": "D:/x/key/v003/fg/fg.####.exr",
                               "fg_despill": "D:/x/key/v003/fg_despill/fg_despill.####.exr"}}
         merge = loader.load_result(status)
-        self.assertEqual(merge.Class(), "Merge2")
-        premult = merge.inputs[1]
-        copy = premult.inputs[0]
-        self.assertEqual((premult.Class(), copy.Class()), ("Premult", "Copy"))
-        fg, alpha = copy.inputs
-        self.assertIn("fg_despill", fg["file"].value())
-        self.assertIn("alpha", alpha["file"].value())
-        self.assertEqual(merge["operation"].value(), "over")
-        self.assertIn("CK2_3840x2160", [f.name() for f in fake_nuke.formats()])
+        t = "CK2_s020_v003_"
+        self.assertEqual(merge, t + "over")
+        inp = fake_nuke._input_name
+        self.assertEqual((inp(t + "copy", 0), inp(t + "copy", 1)), (t + "fg", t + "alpha"))
+        self.assertEqual(inp(t + "premult", 0), t + "copy")
+        self.assertEqual((inp(t + "over", 0), inp(t + "over", 1)), (t + "bg", t + "premult"))
+        self.assertIn("fg_despill", fake_nuke.tcl("value {}fg.file".format(t)))
+        self.assertEqual(fake_nuke.tcl("value {}over.operation".format(t)), "over")
+        # loading the same shot again gets fresh names instead of clobbering
+        self.assertEqual(loader.load_result(status), t + "over2")
 
 
 if __name__ == "__main__":
