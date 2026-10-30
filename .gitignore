@@ -9,3 +9,6 @@ __pycache__/
 shots/
 temp/
 settings.local.json
+
+# Gate test output
+_g2_out/
