@@ -6,10 +6,12 @@ Fill this in as you run the Gate. Paste the G2 report back to Claude as well.
 
 | Item | Value |
 |---|---|
-| Version (Help → About Nuke) | _e.g. 16.0v5_ |
-| Build / release date | |
+| Version (Help → About Nuke) | 17.1v2 (17.1.2), Python 3.11, Qt 6 |
+| Installed | 2026-10-30, `D:\nuke plugin\nuke software\Nuke17.1.exe` (start with `--nc`) |
+| Build / release date | _from Help → About Nuke_ |
 | NC stops working on (release + 180 days) | |
 | Licence shown | Non-commercial |
+| CorridorKey hook | `%USERPROFILE%\.nuke\init.py` → `nuke.pluginAddPath(r"D:/nuke plugin/nuke")` |
 
 ## G2 — Capability test
 
