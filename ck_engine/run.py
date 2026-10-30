@@ -189,7 +189,8 @@ class Runner:
                 self._paste(out, plate, crop)
             d = job["despill"]
             if float(d["amount"]) > 0:
-                outputs["fg_despill"] = self._despill(out, plate.frames, float(d["amount"]), d["screen"])
+                outputs["fg_despill"] = self._despill(out, plate.frames, float(d["amount"]), d["screen"],
+                                                     d.get("mode", "everywhere"))
             shutil.rmtree(raw_dir, ignore_errors=True)
             shutil.rmtree(work, ignore_errors=True)
             work = None
@@ -356,7 +357,8 @@ class Runner:
             self.log(f"WARNING {msg}")
             self.status.update(force=True, warnings=self.status.data.get("warnings", []) + [msg])
 
-    def _despill(self, out: Path, frames: list[int], amount: float, screen: str) -> str:
+    def _despill(self, out: Path, frames: list[int], amount: float, screen: str,
+                 mode: str = "everywhere") -> str:
         from .despill import despill
         from .imageio import read_image, write_exr
         dest = out / "fg_despill"
@@ -364,7 +366,9 @@ class Runner:
         for i, frame in enumerate(frames):
             self.check_cancel()
             fg = read_image(str(out / "fg" / f"fg.{frame:04d}.exr"))
-            write_exr(str(dest / f"fg_despill.{frame:04d}.exr"), despill(fg, amount, screen))
+            alpha = read_image(str(out / "alpha" / f"alpha.{frame:04d}.exr"))[..., 0] if mode == "edges" else None
+            write_exr(str(dest / f"fg_despill.{frame:04d}.exr"),
+                      despill(fg, amount, screen, alpha=alpha, mode=mode))
             if i % 8 == 0:
                 self.progress((0.95, 1.0), (i + 1) / len(frames), f"despill {i + 1}/{len(frames)}")
         return str(dest / "fg_despill.####.exr")

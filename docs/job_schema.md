@@ -15,7 +15,7 @@ defaults shown (from `ck_engine/jobio.py`).
   "frames": {"first": null, "last": null, "start_frame": 1001, "preview_frames": 0},
   "fps": null,
   "hint": {"mode": "none", "path": null, "invert": false, "quality": 0.95, "carry": true},
-  "despill": {"amount": 0.0, "screen": "green"},
+  "despill": {"amount": 0.0, "screen": "green", "mode": "everywhere"},
   "engine": {"window": "auto", "low_vram": false}
 }
 ```
@@ -41,6 +41,7 @@ defaults shown (from `ck_engine/jobio.py`).
 | `hint.carry` | bool | Carry the hint forward between windows (upstream default true) |
 | `despill.amount` | 0–1 | 0 = no `fg_despill` pass |
 | `despill.screen` | `green` `blue` | |
+| `despill.mode` | `everywhere` `edges` | `edges`: full strength on transparent edges and screen bounce (white fur lit green), saturated green objects untouched; `amount` is the maximum |
 | `engine.window` | `auto` or 1–80 | Frames per window; auto lets upstream pick for your VRAM |
 | `engine.low_vram` | bool | Force low-VRAM mode |
 

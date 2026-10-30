@@ -89,3 +89,41 @@ by itself when there's no clear screen or the subject fills the frame. The job s
 
 **Next for hair/fur quality:** edge-aware despill (candidate 2) is now the top item. Fur-tip softness
 needs a model-side or refinement change (candidate 3), not a crop.
+
+## Run 3: edge-aware despill (2026-10-30)
+
+`tests\hair_fur_batch.py --crop auto --despill edges --out hairfur_despill` (despill amount 1.0,
+mode `edges`) against run 2 (crop auto, despill 0.5 everywhere).
+`tests\compare_hairfur.py hairfur_crop hairfur_despill` adds a whole-frame view on neutral grey.
+
+Before choosing the rule, I measured the green excess divided by the pixel's brightest channel
+(ratio) on solid pixels:
+- Fur with green bounce: p99 0.43 (rabbit), 0.53–0.56 (kittens).
+- The green outfit: p50 0.78, with 98% above 0.5.
+
+So `edges` gives full strength below ratio 0.45, fades out by 0.6, and adds 2 × (1 − alpha) on
+transparent edges.
+
+| clip | edge spill run 2 → run 3 |
+|---|---|
+| girlhair | .001 → .000 |
+| greenoutfit | .035 → .020 (outfit itself stays green, see grey view) |
+| manhair | .000 → .000 |
+| womanblue | .001 → .000 |
+| womangreen | .009 → .003 |
+| cat | .001 → .000 |
+| fluffykitten | .019 → .003 |
+| gingerkitten | .007 → .000 |
+| lyingkitten | .030 → .005 |
+| rabbit | .034 → .003 |
+
+Alpha, soft edge % and flicker are identical, because despill only touches `fg_despill`. In the grey
+view the rabbit's white chest and paws lose the green tint, while the green outfit and beret keep
+their colour. The cost is about 0.12 s per 1080p frame (it reads the alpha). Total clip times in this
+run were 15–30 s higher, but that came from the machine state: the despill step itself is 2 s per clip.
+
+**Decision:** the panel defaults to despill 1.0, "edges + bounce". The job schema default stays mode
+`everywhere`, so older jobs behave as before.
+
+**Still open for hair/fur:** soft fur tips (needs refinement or the model, candidate 3), and a flicker
+metric that ignores real motion (candidate 5).

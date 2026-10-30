@@ -339,6 +339,19 @@ class MiscTests(unittest.TestCase):
         blue = np.array([[[0.1, 0.1, 0.9]]], np.float32)
         self.assertAlmostEqual(float(despill.despill(blue, 1.0, "blue")[0, 0, 2]), 0.1, places=5)
 
+    def test_despill_edges_keeps_green_clothing(self):
+        px = np.array([[[0.05, 0.40, 0.06],     # saturated green cloth, solid
+                        [0.70, 0.80, 0.70],     # white fur with green bounce, solid
+                        [0.20, 0.50, 0.20]]],   # half-transparent edge
+                      np.float32)
+        alpha = np.array([[1.0, 1.0, 0.3]], np.float32)
+        out = despill.despill(px, 1.0, alpha=alpha, mode="edges")
+        self.assertAlmostEqual(float(out[0, 0, 1]), 0.40, places=5)   # cloth untouched
+        self.assertAlmostEqual(float(out[0, 1, 1]), 0.70, places=5)   # bounce removed
+        self.assertAlmostEqual(float(out[0, 2, 1]), 0.20, places=5)   # edge fully limited
+        with self.assertRaises(ValueError):
+            despill.despill(px, 1.0, mode="edges")
+
     def test_job_defaults_and_validation(self):
         with tempfile.TemporaryDirectory() as d:
             p = Path(d) / "job.json"

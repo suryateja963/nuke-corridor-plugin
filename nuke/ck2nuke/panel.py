@@ -116,8 +116,10 @@ class KeyPanel(nukescripts.PythonPanel):
         add(nuke.Text_Knob("h_out", "<b>Output</b>", ""))
         add(nuke.Double_Knob("despill", "despill"))
         k["despill"].setRange(0.0, 1.0)
-        k["despill"].setValue(0.5)
+        k["despill"].setValue(1.0)
         add(nuke.Enumeration_Knob("screen", "screen", ["green", "blue"]), newline=False)
+        add(nuke.Enumeration_Knob("despill_mode", "despill where", ["edges + bounce", "everywhere"]))
+        add(nuke.Text_Knob("despill_note", "", "edges + bounce keeps green clothing green; everywhere at 1.0 greys it"))
         add(nuke.Enumeration_Knob("crop", "crop to subject", ["auto", "off"]))
         add(nuke.Int_Knob("crop_margin", "margin"), newline=False)
         k["crop_margin"].setValue(64)
@@ -276,7 +278,8 @@ def key_shot(prepare_only=False):
             "hint": {"mode": mode if (stage == "all" and hint_path) else "none", "path": hint_path,
                      "invert": bool(k["hint_invert"].value()),
                      "quality": float(k["hint_quality"].value()), "carry": True},
-            "despill": {"amount": float(k["despill"].value()), "screen": k["screen"].value()},
+            "despill": {"amount": float(k["despill"].value()), "screen": k["screen"].value(),
+                        "mode": "edges" if k["despill_mode"].value().startswith("edges") else "everywhere"},
             "crop": {"mode": k["crop"].value(), "margin": int(k["crop_margin"].value())},
             "engine": {"window": "auto" if k["window"].value() == "auto" else int(k["window"].value()),
                        "low_vram": bool(k["low_vram"].value())},

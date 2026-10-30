@@ -3,7 +3,7 @@ r"""Before/after close-ups of two hair_fur_batch runs, same edge region in both.
     D:\CorridorKey2\venv\Scripts\python.exe tests\compare_hairfur.py hairfur hairfur_crop
 
 Writes _e2e_out\compare_<a>_vs_<b>.png: one row per clip, alpha and comp-on-dark
-close-ups of run A then run B, plus the metric table in compare_<a>_vs_<b>.md.
+close-ups plus the whole frame on neutral grey (shows green tint) of run A then run B, plus the metric table in compare_<a>_vs_<b>.md.
 """
 
 import json
@@ -21,6 +21,8 @@ import numpy as np  # noqa: E402
 
 from ck_engine.imageio import read_image  # noqa: E402
 from hair_fur_batch import DARK, busiest_edge, label, to8  # noqa: E402
+
+GREY = np.array([0.18, 0.18, 0.18], np.float32)
 
 E2E = REPO / "_e2e_out"
 
@@ -54,6 +56,8 @@ def main():
             for name, img in (("alpha", np.repeat(a3, 3, 2)), ("comp", dark)):
                 t = cv2.resize(to8(img[y:y + size, x:x + size]), (360, 360), interpolation=cv2.INTER_NEAREST)
                 tiles.append(label(t, f"{clip} {tag} {name}"))
+            grey = fg * a3 + GREY * (1 - a3)
+            tiles.append(label(cv2.resize(to8(grey), (640, 360), interpolation=cv2.INTER_AREA), f"{tag} on grey"))
         rows.append(np.hstack(tiles))
         A, B = ma[clip], mb[clip]
         lines.append(f"| {clip} | {A['soft_edge_pct']} -> {B['soft_edge_pct']} | {A['flicker']} -> {B['flicker']} "

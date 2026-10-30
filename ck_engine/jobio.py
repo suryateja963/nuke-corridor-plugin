@@ -39,7 +39,11 @@ DEFAULT_JOB = {
         "quality": 0.95,           # 0.95 careful roto, 0.75 rough matte, 0.5 scribble
         "carry": True,
     },
-    "despill": {"amount": 0.0, "screen": "green"},
+    "despill": {
+        "amount": 0.0,             # 0 = no fg_despill pass; "edges": maximum strength
+        "screen": "green",
+        "mode": "everywhere",      # everywhere | edges (edges + screen bounce, keeps green clothing)
+    },
     "crop": {
         "mode": "off",             # off | auto (find the subject against the screen) | manual
         "margin": 64,              # pixels added around the auto box before rounding to 128
@@ -105,6 +109,8 @@ def validate(job: dict) -> None:
     d = job["despill"]
     if not 0.0 <= float(d["amount"]) <= 1.0 or d["screen"] not in ("green", "blue"):
         raise JobError("despill.amount must be 0-1 and despill.screen green or blue")
+    if d.get("mode", "everywhere") not in ("everywhere", "edges"):
+        raise JobError("despill.mode must be everywhere or edges")
     c = _merge(DEFAULT_JOB["crop"], job.get("crop") or {})
     if c["mode"] not in ("off", "auto", "manual"):
         raise JobError("crop.mode must be off, auto or manual")
