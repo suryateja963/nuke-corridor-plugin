@@ -1,0 +1,11 @@
+# Engine outputs and temp data never go in git
+__pycache__/
+*.pyc
+*.exr
+*.dpx
+*.mp4
+*.mov
+*.npy
+shots/
+temp/
+settings.local.json
