@@ -24,6 +24,12 @@ Personal, internal tool. CorridorKey 2.0 and its weights are under the Corridor 
 Paths live in [settings.json](settings.json). For per-machine changes, create `settings.local.json`
 (not in git) with only the keys you want to override.
 
+## Another PC
+
+Pack everything into one ~10 GB folder and install it there: see
+[docs/install_other_pc.md](docs/install_other_pc.md). Check any PC with
+`tools\check_setup.py`.
+
 ## Install into Nuke
 
 ```bat

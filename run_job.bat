@@ -1,7 +1,10 @@
 @echo off
 rem Key one shot: run_job.bat "D:\CKShots\myshot\job.json"   (or drag a job.json onto this file)
 setlocal
-set "PY=D:\CorridorKey2\venv\Scripts\python.exe"
+rem Engine python from settings.local.json, else settings.json (the installer writes local paths).
+set "PY="
+for /f "usebackq delims=" %%P in (`powershell -NoProfile -Command "$s = Get-Content -Raw '%~dp0settings.json' | ConvertFrom-Json; $l = '%~dp0settings.local.json'; if (Test-Path $l) { $o = Get-Content -Raw $l | ConvertFrom-Json; if ($o.engine_python) { $s.engine_python = $o.engine_python } }; $s.engine_python"`) do set "PY=%%P"
+if not defined PY set "PY=D:\CorridorKey2\venv\Scripts\python.exe"
 set "PYTHONPATH="
 set "PYTHONHOME="
 if "%~1"=="" (
