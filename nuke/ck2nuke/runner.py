@@ -23,17 +23,42 @@ CREATE_NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
 _running = {}  # job_path -> Popen, so the same shot isn't started twice from one Nuke
 
 
+# Variables Nuke (or its Python/Qt/OpenMP libraries) sets that the engine must not inherit.
+_NUKE_VAR_PREFIXES = ("PYTHON", "NUKE", "FOUNDRY", "FN_", "QT_", "KMP_", "OMP_", "MKL_", "TCL_", "TK_",
+                      "__COMPAT_LAYER")
+
+
+def _windows_path():
+    """PATH as a fresh shell gets it: the system PATH then the user PATH, from the registry."""
+    import winreg
+    parts = []
+    for root, key in ((winreg.HKEY_LOCAL_MACHINE, r"SYSTEM\CurrentControlSet\Control\Session Manager\Environment"),
+                      (winreg.HKEY_CURRENT_USER, "Environment")):
+        try:
+            with winreg.OpenKey(root, key) as k:
+                value = winreg.QueryValueEx(k, "Path")[0]
+        except OSError:
+            continue
+        parts += [winreg.ExpandEnvironmentStrings(p) for p in value.split(";") if p.strip()]
+    return ";".join(parts)
+
+
 def _clean_env():
-    # Nuke's PYTHONPATH/PYTHONHOME must not leak into the venv python.
-    env = {k: v for k, v in os.environ.items() if k.upper() not in ("PYTHONPATH", "PYTHONHOME")}
-    # Nuke puts its own folder on PATH; its older msvcp140/OpenMP DLLs can then be picked up by
-    # torch's fallback DLL search and fail with WinError 1114 (seen with Nuke 13.1).
-    nuke_dir = os.path.normcase(os.path.dirname(os.path.abspath(sys.executable)))
-    keys = [k for k in env if k.upper() == "PATH"]
-    for k in keys:
-        parts = [p for p in env[k].split(os.pathsep)
-                 if p and not os.path.normcase(os.path.abspath(p)).startswith(nuke_dir)]
-        env[k] = os.pathsep.join(parts)
+    # The engine runs as if started from a fresh shell. Inside Nuke 13.1, Nuke's own folders on PATH and
+    # its library variables made torch fail to load (WinError 1114 on c10.dll) although the same python
+    # worked from PowerShell.
+    env = {k: v for k, v in os.environ.items() if not k.upper().startswith(_NUKE_VAR_PREFIXES)}
+    if os.name == "nt":
+        try:
+            fresh = _windows_path()
+        except Exception:  # noqa: BLE001
+            fresh = ""
+        nuke_dir = os.path.normcase(os.path.dirname(os.path.abspath(sys.executable)))
+        for k in [k for k in env if k.upper() == "PATH"]:
+            del env[k]
+        env["PATH"] = fresh or os.pathsep.join(
+            p for p in os.environ.get("PATH", "").split(os.pathsep)
+            if p and not os.path.normcase(os.path.abspath(p)).startswith(nuke_dir))
     env["PYTHONUNBUFFERED"] = "1"
     env["PYTHONIOENCODING"] = "utf-8"
     return env
@@ -45,8 +70,15 @@ def _spawn(job_path):
     if not os.path.isfile(py):
         raise RuntimeError("CorridorKey venv python not found: {}\nFix engine_python in {}".format(
             py, os.path.join(REPO_ROOT, "settings.json")))
+    env = _clean_env()
+    try:  # for diagnosing engine start-up problems on another PC
+        with open(os.path.join(os.path.dirname(job_path), "engine_env.txt"), "w", encoding="utf-8") as f:
+            f.write("nuke: {}\n".format(sys.executable))
+            f.write("".join("{}={}\n".format(k, env[k]) for k in sorted(env)))
+    except OSError:
+        pass
     return subprocess.Popen([py, "-u", "-m", "ck_engine.run", job_path], cwd=REPO_ROOT,
-                            env=_clean_env(), stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                            env=env, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
                             stderr=subprocess.STDOUT, text=True, encoding="utf-8", errors="replace",
                             creationflags=CREATE_NO_WINDOW)
 
