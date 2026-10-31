@@ -43,6 +43,15 @@ For another drive (for example a PC with only C:):
 powershell -ExecutionPolicy Bypass -File "E:\CK2_bundle\install_bundle.ps1" -Root "C:\" -Shots "C:\CKShots"
 ```
 
+**Not enough space to copy, or the copy fails (robocopy code 9)?** If the bundle folder is already on a local
+drive of that PC, use it where it is; nothing is copied:
+
+```bat
+powershell -ExecutionPolicy Bypass -File "D:\SOFTWEARS\CK2_bundle\install_bundle.ps1" -InPlace -Shots "E:\CKShots"
+```
+
+Point `-Shots` at a drive with plenty of free space. Don't move or rename the bundle folder afterwards.
+
 The installer:
 1. Copies the engine and the tool.
 2. Points the Python venv at its copied interpreter.
