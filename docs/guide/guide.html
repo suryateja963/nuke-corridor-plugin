@@ -117,6 +117,8 @@
       nvidia.com (or the NVIDIA App) and restart the PC.</li>
     <li><b>About 30 GB free</b> on the drive you install to: 10 GB for the tool, and at least 20 GB for shots.
       Keyed EXR files are large.</li>
+    <li><b>Enough Windows memory.</b> The engine needs about 15 GB of RAM + page file. On a 16 GB PC, keep the page file
+      on a drive with plenty of free space (the setup check tests this; section 14 shows how to move it).</li>
     <li><b>Nuke is installed</b> (Non-commercial or commercial). It was tested on Nuke 17.1v2; any Nuke with
       Python 3 should work.</li>
     <li><b>A USB / external drive with at least 11 GB free</b> to carry the folder.</li>
@@ -390,7 +392,8 @@ All good - start Nuke and look for the CorridorKey 2.0 menu.</pre>
   <table>
     <tr><th style="width:32%">Message or problem</th><th>What to do</th></tr>
     <tr><td>No CorridorKey 2.0 menu in Nuke</td><td>Run the "Add the Nuke menu" command from section 5 and restart Nuke. Check <code>C:\Users\&lt;you&gt;\.nuke\init.py</code> contains a line ending in "CorridorKey 2.0 tool".</td></tr>
-    <tr><td>"The GPU ran out of memory"</td><td>Close other GPU apps, make the Nuke Viewer small, tick low VRAM, or set window to 8 or 4. See section 12.</td></tr>
+    <tr><td>"The GPU ran out of memory", "ran out of Windows memory", or "engine crashed (access violation)"</td><td>Usually <b>Windows memory</b>, not the graphics card: the engine needs about 15 GB of RAM + page file. Run the setup check (section 5); if "Windows memory" says FAIL, move the page file to a drive with space (see the row below). Otherwise close other GPU programs (other Nuke windows, cineSync, browsers), tick low VRAM, or set window to 4. The tool already retries by itself with a smaller window.</td></tr>
+    <tr><td>Setup check: "Windows memory (RAM + page file)" FAIL</td><td>The page file is too small or on a nearly full drive. Press Start, type <b>Adjust the appearance and performance of Windows</b>, open it, go to <b>Advanced &rarr; Virtual memory &rarr; Change</b>. Untick "Automatically manage", select the <b>D:</b> drive, choose <b>System managed size</b>, click <b>Set</b>, then <b>OK</b>, and restart the PC.</td></tr>
     <tr><td>"CorridorKey venv python not found" or "weights missing"</td><td>Paths are wrong. Run the setup check (section 5); re-run the installer if files are missing.</td></tr>
     <tr><td>"ffmpeg not found"</td><td>Check the ffmpeg lines in <code>nuke plugin\settings.local.json</code>.</td></tr>
     <tr><td>Key looks washed out or too contrasty</td><td>Wrong colour space or range. Check the camera setting; try range "limited" or "full".</td></tr>

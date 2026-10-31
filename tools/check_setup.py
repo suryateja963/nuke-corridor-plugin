@@ -102,6 +102,15 @@ def shots():
     return gb > 20, f"{root} writable, {gb:.0f} GB free" + ("" if gb > 20 else " - keep 20+ GB free for EXR plates")
 
 
+def memory():
+    from ck_engine.sysmem import ENGINE_COMMIT_GB, advice, headroom
+    h = headroom()
+    where = ", ".join(f"{d}:" for d in h["drives"]) or "?"
+    detail = (f"{h['usable_gb']:.1f} GB can be committed now (RAM {h['ram_gb']:.0f} GB, page file on {where}"
+              f"{', automatic' if h['auto'] else ''}); keying needs about {ENGINE_COMMIT_GB:.0f} GB")
+    return (True, detail) if h["usable_gb"] >= ENGINE_COMMIT_GB else (False, detail + ". " + advice(h))
+
+
 def nuke_hook():
     init = Path(os.environ.get("USERPROFILE", "~")) / ".nuke" / "init.py"
     want = (REPO / "nuke").as_posix()
@@ -118,6 +127,7 @@ check("ffmpeg / ffprobe", ffmpeg)
 check("NVIDIA driver", driver)
 check("GPU from the engine python", gpu)
 check("shots folder", shots)
+check("Windows memory (RAM + page file)", memory)
 check("Nuke menu hook", nuke_hook)
 print("\nAll good - start Nuke and look for the CorridorKey 2.0 menu." if all(results)
       else "\nFix the FAIL lines above, then run this again.")

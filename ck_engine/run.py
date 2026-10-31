@@ -40,6 +40,21 @@ class Cancelled(Exception):
     pass
 
 
+class GpuOutOfMemory(EngineError):
+    pass
+
+
+_CHUNK = re.compile(r"hann_chunk=(\d+)")
+# Running out of memory shows up in several forms on Windows (seen on SHOT-113):
+# torch's OutOfMemoryError, "fatal : Memory allocation failure" + "bad allocation",
+# and a hard crash with an access violation.
+_MEM_ERROR = re.compile(r"OutOfMemoryError|CUDA out of memory|bad allocation|Memory allocation failure|"
+                        r"cudaErrorMemoryAllocation")
+ACCESS_VIOLATION = (3221225477, -1073741819)  # 0xC0000005
+_OOM_NUMBERS = re.compile(r"total capacity of ([\d.]+) GiB of which ([\d.]+) (GiB|MiB) is free.*?"
+                          r"([\d.]+) GiB is allocated by PyTorch")
+
+
 class Log:
     """Prints to the console (read by Nuke) and appends to log.txt."""
 
@@ -84,6 +99,8 @@ class Runner:
         self.cancel_file = self.job_dir / "CANCEL"
         self.log = Log(self.job_dir / "log.txt")
         self.status = Status(self.job_dir)
+        self._hint_rough = False
+        self._mem = None  # Windows memory headroom measured before keying
 
     # -- helpers ------------------------------------------------------------
     def progress(self, band, frac: float, msg: str) -> None:
@@ -156,7 +173,8 @@ class Runner:
             self._check_hint(job, hint, plate)
 
             from . import crop as cropmod
-            crop, how = cropmod.resolve(job, plate, hint)
+            # A rough hint (mostly screen) would only widen the box and cost GPU memory.
+            crop, how = cropmod.resolve(job, plate, {} if self._hint_rough else hint)
             self.log(f"crop: {how}")
             self.status.update(force=True, crop=list(crop) if crop else None)
             if crop:
@@ -181,9 +199,8 @@ class Runner:
                 },
                 **hint,
             }
-            wjob_path = work / "job.json"
-            write_json_atomic(wjob_path, wjob)
-            self._run_worker(cfg, wjob_path, work, len(plate.frames))
+            self._check_memory()
+            self._key_with_retries(cfg, job, wjob, work, raw_dir, len(plate.frames))
 
             outputs = self._collect(raw_dir, out, plate.frames)
             if crop:
@@ -285,6 +302,7 @@ class Runner:
         tail: list[str] = []
         done = False
         cancel_at = None
+        mem_lines: list[str] = []
         try:
             while True:
                 try:
@@ -301,6 +319,8 @@ class Runner:
                     break
                 tail.append(line)
                 del tail[:-60]
+                if _MEM_ERROR.search(line):
+                    mem_lines.append(line)
                 if line.startswith("CK2_PROGRESS"):
                     _, n, _t = line.split()
                     self.progress(P_STAGE2, int(n) / max(total, 1), f"writing frames {n}/{total}")
@@ -323,16 +343,19 @@ class Runner:
             raise Cancelled()
         if proc.returncode != 0 or not done:
             text = "\n".join(tail)
-            if "OutOfMemoryError" in text or "CUDA out of memory" in text:
-                raise EngineError("The GPU ran out of memory. Close other GPU apps (browser, "
-                                  "Resolve, games; set Nuke's viewer to a small frame), or tick "
-                                  "Low VRAM / pick a smaller window, then key again.")
-            if proc.returncode in (3221225477, -1073741819):  # 0xC0000005, Windows access violation
-                raise EngineError(
-                    "The CorridorKey engine crashed (Windows access violation) while loading the big models. "
-                    "On 4K shots this happens when other programs hold memory: close other Nuke windows, "
-                    "cineSync/players, browsers and games, then key again. If it repeats, tick Low VRAM, "
-                    "set window to 4, or key a preview first.")
+            if mem_lines or proc.returncode in ACCESS_VIOLATION:
+                m = _OOM_NUMBERS.search("\n".join(mem_lines))
+                detail = ""
+                if m:
+                    total_gb, free = float(m.group(1)), float(m.group(2)) / (1024 if m.group(3) == "MiB" else 1)
+                    mine = float(m.group(4))
+                    others = max(0.0, total_gb - free - mine)
+                    detail = (f" The card has {total_gb:.1f} GB; CorridorKey had {mine:.1f} GB and other "
+                              f"programs about {others:.1f} GB.")
+                raise GpuOutOfMemory("The GPU ran out of memory." + detail + " Close other GPU programs "
+                                     "(other Nuke windows, cineSync/players, browsers, Resolve, games; set "
+                                     "Nuke's viewer to a small frame), tick Low VRAM, or pick window 4 or 2, "
+                                     "then key again.")
             last = next((l for l in reversed(tail) if l.strip()), "no output")
             raise EngineError(f"CorridorKey engine failed (code {proc.returncode}): {last[-300:]}. "
                               "Full output in log.txt.")
@@ -354,6 +377,60 @@ class Runner:
             outputs[name] = str(dest / f"{name}.####.exr")
         return outputs
 
+    def _key_with_retries(self, cfg: dict, job: dict, wjob: dict, work: Path, raw_dir: Path,
+                          total: int) -> None:
+        """Runs the worker. If the GPU runs out of memory (other programs took some
+        while it ran), retries with low VRAM and a smaller window: 4 -> 2 -> 1."""
+        window, low_vram = job["engine"]["window"], bool(job["engine"]["low_vram"])
+        tried = []
+        for attempt in range(3):
+            wdir = work if attempt == 0 else work / f"retry{attempt}"
+            wdir.mkdir(exist_ok=True)
+            wjob["work_dir"] = str(wdir)
+            wjob["settings"]["window"], wjob["settings"]["low_vram"] = window, low_vram
+            wjob_path = wdir / "job.json"
+            write_json_atomic(wjob_path, wjob)
+            try:
+                self._run_worker(cfg, wjob_path, wdir, total)
+            except GpuOutOfMemory as exc:
+                from .sysmem import ENGINE_COMMIT_GB, advice
+                if self._mem and self._mem["usable_gb"] < ENGINE_COMMIT_GB:
+                    # Windows itself was short of memory: a smaller window won't help.
+                    raise EngineError("The key ran out of Windows memory (it shows up as a GPU error, but the "
+                                      "GPU had room). " + advice(self._mem)) from None
+                used = window
+                if used == "auto":
+                    m = _CHUNK.search(self.status.data.get("auto_vram") or "")
+                    used = int(m.group(1)) if m else 4
+                tried.append(int(used))
+                if used <= 1 or attempt == 2:
+                    raise GpuOutOfMemory(f"{exc} Tried window {', '.join(map(str, tried))} with low VRAM.") from None
+                window, low_vram = max(1, int(used) // 2), True
+                self.log(f"GPU out of memory with window {used}; retrying with window {window} + low VRAM")
+                self.progress(P_LOAD, 0.0, f"out of GPU memory - retrying with window {window}")
+                shutil.rmtree(raw_dir, ignore_errors=True)
+                continue
+            if tried:
+                self._warn(f"The GPU ran out of memory with window {tried[0]} (other programs were using it), "
+                           f"so the key was redone with window {window} and low VRAM: slower, with slightly "
+                           "less smoothing between frames. Close other GPU programs before big 4K keys.")
+            return
+
+    def _check_memory(self) -> None:
+        from .sysmem import ENGINE_COMMIT_GB, advice, headroom
+        try:
+            self._mem = h = headroom()
+        except Exception as exc:  # noqa: BLE001
+            self.log(f"memory check skipped: {exc}")
+            return
+        self.log(f"memory: Windows can commit {h['usable_gb']:.1f} GB more (available {h['available_gb']:.1f} GB "
+                 f"+ page file growth {h['growth_gb']:.1f} GB on {', '.join(h['drives']) or '?'}); "
+                 f"the engine needs about {ENGINE_COMMIT_GB:.0f} GB")
+        if h["usable_gb"] < 10.0:
+            raise EngineError("Not enough Windows memory to key. " + advice(h))
+        if h["usable_gb"] < ENGINE_COMMIT_GB:
+            self.log("WARNING memory is tight; the key may fail part-way. " + advice(h))
+
     def _warn(self, msg: str) -> None:
         self.log(f"WARNING {msg}")
         self.status.update(force=True, warnings=self.status.data.get("warnings", []) + [msg])
@@ -363,6 +440,7 @@ class Runner:
         the shape as subject. Lower the quality when the hint is mostly screen."""
         from .hints import ROUGH_QUALITY, SCREEN_LOWER, SCREEN_WARN, screen_share
         share = screen_share(hint, plate)
+        self._hint_rough = share is not None and share > SCREEN_LOWER
         q = float(job["hint"]["quality"])
         if share is None or q <= ROUGH_QUALITY:
             return
