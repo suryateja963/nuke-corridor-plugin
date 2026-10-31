@@ -17,7 +17,9 @@ if (-not $Shots) { $Shots = Join-Path $Root "CKShots" }
 if (-not (Test-Path "$bundle\CorridorKey2\venv") -or -not (Test-Path "$bundle\nuke plugin\ck_engine")) {
     throw "Run this script from inside the bundle folder made by make_bundle.ps1."
 }
-$free = (Get-PSDrive $Root.Substring(0, 1)).Free / 1GB
+# DriveInfo reads free space reliably (Get-PSDrive can report 0, e.g. in an Administrator window).
+$free = [System.IO.DriveInfo]::new($Root.Substring(0, 1) + ":\").AvailableFreeSpace / 1GB
+Write-Output ("{0:N1} GB free on {1}" -f $free, $Root)
 if ($free -lt 15) { throw ("Only {0:N0} GB free on {1}; need about 10 GB plus room for shots." -f $free, $Root) }
 
 function Copy-Tree($src, $dst) {

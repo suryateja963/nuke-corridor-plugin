@@ -21,7 +21,7 @@ function Copy-Tree($src, $dst, [string[]]$excludeDirs = @(), [string[]]$excludeF
 $ffmpeg = (Get-Command ffmpeg -ErrorAction Stop).Source
 $ffprobe = (Get-Command ffprobe -ErrorAction Stop).Source
 New-Item -ItemType Directory -Force $Dest | Out-Null
-$free = (Get-PSDrive ((Resolve-Path $Dest).Drive.Name)).Free / 1GB
+$free = [System.IO.DriveInfo]::new((Resolve-Path $Dest).Drive.Name + ":\").AvailableFreeSpace / 1GB
 if ($free -lt 11) { throw ("Only {0:N0} GB free on the destination; the bundle needs about 10 GB." -f $free) }
 
 Write-Output "1/5 CorridorKey 2.0 upstream + weights (4.8 GB)..."
