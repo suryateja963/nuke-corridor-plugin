@@ -389,6 +389,23 @@ class NukePathTests(unittest.TestCase):
                 probe.resolve_sequence(d + "/other.0001.exr")
 
 
+class HintScreenShareTests(unittest.TestCase):
+    def test_rough_box_vs_tight_roto(self):
+        with tempfile.TemporaryDirectory() as d:
+            plate = _green_plate(d)                      # subject box x 400-520, y 150-400
+            tight = np.zeros((512, 1024), np.float32)
+            tight[150:400, 400:520] = 1.0
+            rough = np.zeros((512, 1024), np.float32)
+            rough[:, 300:1024] = 1.0
+            for name, m in (("tight", tight), ("rough", rough)):
+                np.save(os.path.join(d, name + ".npy"), m[None])
+            s_tight = hints.screen_share({"hint_npy": os.path.join(d, "tight.npy")}, plate)
+            s_rough = hints.screen_share({"hint_npy": os.path.join(d, "rough.npy")}, plate)
+            self.assertLess(s_tight, 0.05)
+            self.assertGreater(s_rough, hints.SCREEN_LOWER)
+            self.assertIsNone(hints.screen_share({}, plate))
+
+
 class MiscTests(unittest.TestCase):
     def test_despill(self):
         px = np.array([[[0.2, 0.8, 0.2]]], np.float32)

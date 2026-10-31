@@ -106,6 +106,8 @@ def _finish(status, job_path):
         warnings = status.get("warnings") or []
         if warnings:
             print("[CorridorKey 2.0] warnings:\n  " + "\n  ".join(warnings))
+            nuke.message("CorridorKey 2.0: key {} finished, with notes:\n\n- {}".format(
+                status.get("version", ""), "\n\n- ".join(warnings)))
     elif state == "cancelled":
         nuke.message("CorridorKey 2.0: cancelled.")
     else:

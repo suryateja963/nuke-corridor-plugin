@@ -78,6 +78,43 @@ def _pick_frames(available: list[int], plate_frames: list[int], source_frames: l
         "over the same frame range as the plate.")
 
 
+# Share of a hint's white area that is open screen in the plate (SHOT-113's
+# rough box: 0.79; careful rotos: 0.003-0.011; a careful roto around green
+# clothes on green: 0.60, because the clothes look like screen).
+SCREEN_WARN, SCREEN_LOWER = 0.3, 0.7
+ROUGH_QUALITY = 0.75
+
+
+def screen_share(hint: dict, plate) -> float | None:
+    """Share of the first-frame hint (white > 0.5) that is screen-coloured in the
+    first plate frame, or None if there is no hint or no clear screen."""
+    if hint.get("hint_npy"):
+        mask = np.load(hint["hint_npy"])[0]
+    elif hint.get("hint_path"):
+        files = sorted(Path(hint["hint_path"]).glob("hint_*.png"))
+        if not files:
+            return None
+        mask = read_image(str(files[0]))[..., 0]
+    else:
+        return None
+    rgb = np.power(np.clip(read_image(plate.pattern % plate.frames[0]), 0.0, 1.0), 1.0 / 2.2)
+    m = resize(mask.astype(np.float32), rgb.shape[1], rgb.shape[0]) > 0.5
+    if not m.any():
+        return None
+    border = np.concatenate([rgb[:8].reshape(-1, 3), rgb[-8:].reshape(-1, 3),
+                             rgb[:, :8].reshape(-1, 3), rgb[:, -8:].reshape(-1, 3)])
+    screen = np.median(border, axis=0)
+    c = int(np.argmax(screen))
+    if c == 0:
+        return None
+    others = [i for i in range(3) if i != c]
+    screen_key = float(screen[c] - screen[others].max())
+    if screen_key < 0.08:
+        return None
+    is_screen = (rgb[..., c] - rgb[..., others].max(axis=-1)) > 0.5 * screen_key
+    return float((m & is_screen).sum() / m.sum())
+
+
 def prepare_hint(job: dict, plate, shot_dir: Path, ffmpeg: str, ffprobe: str,
                  check_cancel=None) -> dict:
     """Returns the hint fields for the CK2 worker job ({} for no hint)."""

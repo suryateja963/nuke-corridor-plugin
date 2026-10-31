@@ -153,6 +153,7 @@ class Runner:
             self.progress(P_HINT, 0.0, "preparing hint")
             hint = prepare_hint(job, plate, shot, ffmpeg, ffprobe, check_cancel=self.check_cancel)
             self.check_cancel()
+            self._check_hint(job, hint, plate)
 
             from . import crop as cropmod
             crop, how = cropmod.resolve(job, plate, hint)
@@ -326,6 +327,12 @@ class Runner:
                 raise EngineError("The GPU ran out of memory. Close other GPU apps (browser, "
                                   "Resolve, games; set Nuke's viewer to a small frame), or tick "
                                   "Low VRAM / pick a smaller window, then key again.")
+            if proc.returncode in (3221225477, -1073741819):  # 0xC0000005, Windows access violation
+                raise EngineError(
+                    "The CorridorKey engine crashed (Windows access violation) while loading the big models. "
+                    "On 4K shots this happens when other programs hold memory: close other Nuke windows, "
+                    "cineSync/players, browsers and games, then key again. If it repeats, tick Low VRAM, "
+                    "set window to 4, or key a preview first.")
             last = next((l for l in reversed(tail) if l.strip()), "no output")
             raise EngineError(f"CorridorKey engine failed (code {proc.returncode}): {last[-300:]}. "
                               "Full output in log.txt.")
@@ -347,6 +354,29 @@ class Runner:
             outputs[name] = str(dest / f"{name}.####.exr")
         return outputs
 
+    def _warn(self, msg: str) -> None:
+        self.log(f"WARNING {msg}")
+        self.status.update(force=True, warnings=self.status.data.get("warnings", []) + [msg])
+
+    def _check_hint(self, job: dict, hint: dict, plate) -> None:
+        """A rough Roto at high hint quality makes the model keep the screen inside
+        the shape as subject. Lower the quality when the hint is mostly screen."""
+        from .hints import ROUGH_QUALITY, SCREEN_LOWER, SCREEN_WARN, screen_share
+        share = screen_share(hint, plate)
+        q = float(job["hint"]["quality"])
+        if share is None or q <= ROUGH_QUALITY:
+            return
+        self.log(f"hint: {share:.0%} of the hint's area is open screen")
+        if share > SCREEN_LOWER:
+            job["hint"]["quality"] = ROUGH_QUALITY
+            self._warn(f"{share:.0%} of the hint shape is green/blue screen, so it looks like a rough shape. "
+                       f"Hint quality was lowered from {q:g} to {ROUGH_QUALITY:g} so the screen inside it is "
+                       "keyed out. For a careful roto, draw it tight around the subject.")
+        elif share > SCREEN_WARN:
+            self._warn(f"{share:.0%} of the hint shape is green/blue screen. If the Roto is rough, key again "
+                       f"with hint quality {ROUGH_QUALITY:g}; if the subject wears screen-coloured clothes, "
+                       "ignore this.")
+
     def _paste(self, out: Path, plate, crop) -> None:
         """Cropped alpha/fg -> full plate size, zero outside the box."""
         from .crop import paste_file
@@ -360,10 +390,8 @@ class Runner:
                 self.progress((0.95, 0.97), (i + 1) / len(plate.frames),
                               f"placing crop {i + 1}/{len(plate.frames)}")
         if edge > 0.02:
-            msg = (f"the subject touches the crop box edge ({edge:.0%} of the border); part of it "
-                   "may be cut off. Raise the crop margin or set crop to off.")
-            self.log(f"WARNING {msg}")
-            self.status.update(force=True, warnings=self.status.data.get("warnings", []) + [msg])
+            self._warn(f"the subject touches the crop box edge ({edge:.0%} of the border); part of it "
+                       "may be cut off. Raise the crop margin or set crop to off.")
 
     def _despill(self, out: Path, frames: list[int], amount: float, screen: str,
                  mode: str = "everywhere") -> str:
