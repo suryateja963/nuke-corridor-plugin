@@ -19,6 +19,12 @@ RAW_EXT = {".braw", ".r3d", ".ari", ".arx", ".crm", ".nev"}
 _HASHES = re.compile(r"#+")
 _PRINTF = re.compile(r"%0?(\d*)d")
 _TRAILING_NUM = re.compile(r"^(.*?)(\d+)(\.[^.]+)$")
+# Nuke's file browser appends the frame range: "plate.####.exr 1001-1100".
+_NUKE_RANGE = re.compile(r"\s+-?\d+-\d+$")
+
+
+def strip_range(path: str) -> str:
+    return _NUKE_RANGE.sub("", path.strip())
 
 
 @dataclass
@@ -95,6 +101,7 @@ def _scan_sequence(printf: str) -> list[int]:
 
 def resolve_sequence(path: str) -> str:
     """Folder, pattern, or one frame of a sequence -> printf pattern."""
+    path = strip_range(path)
     p = Path(path)
     if p.is_dir():
         images = sorted(f for f in os.listdir(p) if Path(f).suffix.lower() in IMAGE_EXT)
@@ -107,12 +114,17 @@ def resolve_sequence(path: str) -> str:
     if _HASHES.search(p.name) or _PRINTF.search(p.name):
         return str(p.parent / to_printf(p.name))
     m = _TRAILING_NUM.match(p.name)
-    if m and p.is_file():
-        return str(p.parent / f"{m.group(1)}%0{len(m.group(2))}d{m.group(3)}")
+    if m:
+        printf = str(p.parent / f"{m.group(1)}%0{len(m.group(2))}d{m.group(3)}")
+        # One frame of a sequence, even one outside its range (an expression in a
+        # Read evaluated at frame 1 gives plate.0001.exr for a 1001-1100 plate).
+        if p.is_file() or _scan_sequence(printf):
+            return printf
     raise EngineError(f"source not found: {path}")
 
 
 def probe(path: str, ffprobe: str) -> Source:
+    path = strip_range(path)
     ext = Path(path.replace("#", "0")).suffix.lower()
     if ext in RAW_EXT:
         raise EngineError(f"{ext} camera raw can't be decoded here. Export EXR or ProRes from "

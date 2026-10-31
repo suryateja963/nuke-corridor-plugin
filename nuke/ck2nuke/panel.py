@@ -194,20 +194,29 @@ def _source_path(panel):
     return k["src_file"].value()
 
 
-def _render_hint(node, shot_dir, first, last, mode):
+def _render_hint(node, shot_dir, first, last, mode, plate_size=None):
     """Renders node `node` (by name; white = subject) to 16-bit PNGs. NC renders
     at most 1920x1080, so larger plates are scaled down here and back up by the
     engine. The Reformat/Write are pasted onto the selected hint node and run
-    through TCL, so no Node objects are used."""
+    through TCL, so no Node objects are used.
+
+    plate_size (w, h): render in the plate's pixel frame. A Roto that isn't
+    connected to the plate has the project format (Nuke's default is 2048x1556)
+    while its shapes are drawn in plate pixels over the plate, so the hint is cut
+    to the plate's box from the bottom-left, without scaling."""
     out_dir = os.path.join(shot_dir, "hint", "nuke_render").replace("\\", "/")
     if not os.path.isdir(out_dir):
         os.makedirs(out_dir)
     for f in os.listdir(out_dir):
         os.remove(os.path.join(out_dir, f))
-    w, h = nc.size(node)
+    w, h = plate_size or nc.size(node)
     ref_name, write_name = nc.unique("CK2_hintReformat"), nc.unique("CK2_hintWrite")
+    box_name = nc.unique("CK2_hintBox")
     pattern = out_dir + "/hint.####.png"
     nk = ""
+    if plate_size and tuple(nc.size(node)) != (w, h):
+        nk += ("Reformat {{\n type \"to box\"\n box_width {}\n box_height {}\n box_fixed true\n"
+               " resize none\n center false\n black_outside true\n name {}\n}}\n").format(w, h, box_name)
     if w > NC_MAX_W or h > NC_MAX_H:
         scale = min(float(NC_MAX_W) / w, float(NC_MAX_H) / h)
         nk += "Reformat {{\n type scale\n scale {:.6f}\n filter Cubic\n name {}\n}}\n".format(scale, ref_name)
@@ -223,6 +232,7 @@ def _render_hint(node, shot_dir, first, last, mode):
     finally:
         nc.delete(write_name)
         nc.delete(ref_name)
+        nc.delete(box_name)
     return pattern
 
 
@@ -263,7 +273,8 @@ def key_shot(prepare_only=False):
             if not use_range:
                 raise ValueError("Set the frame range (first/last) to render the hint over.")
             r_last = last if not preview else min(last, first + preview - 1)
-            hint_path = _render_hint(node, shot_dir, first, r_last, mode)
+            plate_size = tuple(nc.size(panel.read)) if panel.read is not None else None
+            hint_path = _render_hint(node, shot_dir, first, r_last, mode, plate_size)
         elif stage == "all" and src_kind == "file":
             hint_path = k["hint_file"].value()
             if not hint_path:

@@ -374,6 +374,21 @@ class RefineTests(unittest.TestCase):
             self.assertFalse([f for f in os.listdir(d) if "refine" in f])
 
 
+class NukePathTests(unittest.TestCase):
+    def test_nuke_range_suffix_and_out_of_range_frame(self):
+        with tempfile.TemporaryDirectory() as d:
+            for f in (1001, 1002, 1003):
+                write_exr(os.path.join(d, f"plate.{f}.exr"), np.zeros((4, 4, 3), np.float32))
+            want = os.path.join(d, "plate.%04d.exr")
+            self.assertEqual(probe.resolve_sequence(d + "/plate.####.exr 1001-1003"), want)
+            # an expression evaluated at frame 1 names a frame the plate doesn't have
+            self.assertEqual(probe.resolve_sequence(d + "/plate.0001.exr"), want)
+            src = probe.probe(d + "/plate.####.exr 1001-1003", FFPROBE)
+            self.assertEqual(src.frames, [1001, 1002, 1003])
+            with self.assertRaises(EngineError):
+                probe.resolve_sequence(d + "/other.0001.exr")
+
+
 class MiscTests(unittest.TestCase):
     def test_despill(self):
         px = np.array([[[0.2, 0.8, 0.2]]], np.float32)
