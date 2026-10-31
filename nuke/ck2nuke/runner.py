@@ -11,6 +11,7 @@ import json
 import os
 import queue
 import subprocess
+import sys
 import threading
 import time
 
@@ -25,6 +26,14 @@ _running = {}  # job_path -> Popen, so the same shot isn't started twice from on
 def _clean_env():
     # Nuke's PYTHONPATH/PYTHONHOME must not leak into the venv python.
     env = {k: v for k, v in os.environ.items() if k.upper() not in ("PYTHONPATH", "PYTHONHOME")}
+    # Nuke puts its own folder on PATH; its older msvcp140/OpenMP DLLs can then be picked up by
+    # torch's fallback DLL search and fail with WinError 1114 (seen with Nuke 13.1).
+    nuke_dir = os.path.normcase(os.path.dirname(os.path.abspath(sys.executable)))
+    keys = [k for k in env if k.upper() == "PATH"]
+    for k in keys:
+        parts = [p for p in env[k].split(os.pathsep)
+                 if p and not os.path.normcase(os.path.abspath(p)).startswith(nuke_dir)]
+        env[k] = os.pathsep.join(parts)
     env["PYTHONUNBUFFERED"] = "1"
     env["PYTHONIOENCODING"] = "utf-8"
     return env
